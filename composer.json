@@ -1,0 +1,14 @@
+{
+  "name": "6abrilr/parteoficialturno",
+  "type": "project",
+  "require": {
+    "php": ">=8.1",
+    "smalot/pdfparser": "^2.10",
+    "phpoffice/phpword": "^1.2"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "php/"
+    }
+  }
+}
