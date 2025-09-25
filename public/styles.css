@@ -1,0 +1,5 @@
+/* Pintado de filas según estado */
+.tr-estado-NUEVA       { background: #f8d7da; }   /* rojo claro */
+.tr-estado-ACTUALIZADA { background: #fff3cd; }   /* amarillo */
+.tr-estado-RESUELTA    { background: #d1e7dd; }   /* verde */
+.estado-badge{ font-size: .8rem; color:#6c757d; margin-left:.4rem }

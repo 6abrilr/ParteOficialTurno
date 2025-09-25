@@ -166,26 +166,127 @@ qs('btnImpCenope')?.addEventListener('click', async ()=>{
   }
 });
 
-function renderPreviewCenope(data){
-  const div = qs('previewTables'); if(!div) return;
-  const mk = (title, rows)=>{
-    if(!rows || !rows.length) return `<h6 class='mt-2'>${esc(title)}</h6><div class='text-muted'>SIN NOVEDAD</div>`;
-    const head = `<thead><tr><th>Nro</th><th>Grado</th><th>Apellido y Nombre</th><th>Arma</th><th>Unidad/Destino</th><th>Fecha</th><th>Habitación</th><th>Hospital</th></tr></thead>`;
-    const body = rows.slice(0,10).map(r=>`<tr>
-      <td>${esc(r.Nro??'')}</td>
-      <td>${esc(r.Grado??'')}</td>
-      <td>${esc(r['Apellido y Nombre']??'')}</td>
-      <td>${esc(r.Arma??'')}</td>
-      <td>${esc(r.Unidad??'')}</td>
-      <td>${esc(r.Fecha??'')}</td>
-      <td>${esc(r['Habitación']??'')}</td>
-      <td>${esc(r.Hospital??'')}</td>
-    </tr>`).join('');
-    return `<h6 class='mt-2'>${esc(title)}</h6><div class='table-responsive'><table class='table table-sm table-bordered'>${head}<tbody>${body}</tbody></table></div>`;
+// ===== Helpers (nuevos) =====
+function turnoHoyDDMMMYY(){
+  // Devuelve "25SEP25" (en mayúsculas)
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mes = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'][d.getMonth()];
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}${mes}${yy}`;
+}
+function applyRowEstado(tr, estado){
+  tr.classList.remove('tr-estado-NUEVA','tr-estado-ACTUALIZADA','tr-estado-RESUELTA');
+  if (estado) tr.classList.add('tr-estado-'+estado);
+}
+function valueOrEmpty(el){ return (el?.textContent ?? '').trim(); }
+
+// ===== LTA – Render editable con pintado =====
+function renderPreviewLTA(rows){
+  const div = qs('ltaPreview'); if(!div) return;
+
+  // si viene vacío
+  if(!rows || !rows.length){
+    div.innerHTML = '<div class="text-muted">SIN NOVEDAD</div>';
+    return;
+  }
+
+  // FECHA = turno (hoy) para todas las filas
+  const hoy = turnoHoyDDMMMYY();
+  rows = rows.map(r => ({...r, fecha: hoy, estado: r.estado || 'ACTUALIZADA'})); // default: ACTUALIZADA
+
+  const head = `
+    <thead>
+      <tr>
+        <th style="min-width:180px">NODO</th>
+        <th style="width:90px">DESDE</th>
+        <th>NOVEDADES <span class="estado-badge">Hacé clic y editá el texto</span></th>
+        <th style="width:90px">FECHA</th>
+        <th style="width:90px">SERVICIO</th>
+        <th style="width:110px">N° Ticket</th>
+        <th style="width:140px">Estado</th>
+      </tr>
+    </thead>`;
+
+  const body = rows.map((r, idx)=>{
+    const estadoSel = `
+      <select class="form-select form-select-sm sel-estado" data-row="${idx}">
+        ${['NUEVA','ACTUALIZADA','RESUELTA'].map(s => `<option ${s===r.estado?'selected':''}>${s}</option>`).join('')}
+      </select>`;
+    return `<tr data-row="${idx}" class="tr-estado-${r.estado}">
+      <td contenteditable="true" class="ce-nodo">${esc(r.nodo||'')}</td>
+      <td contenteditable="true" class="ce-desde text-nowrap">${esc(r.desde||'')}</td>
+      <td contenteditable="true" class="ce-nov">${esc(r.novedad||'')}</td>
+      <td contenteditable="true" class="ce-fecha text-nowrap">${esc(r.fecha||hoy)}</td>
+      <td contenteditable="true" class="ce-serv text-nowrap">${esc(r.servicio||'')}</td>
+      <td contenteditable="true" class="ce-tic text-nowrap">${esc(r.ticket||'')}</td>
+      <td>${estadoSel}</td>
+    </tr>`;
+  }).join('');
+
+  div.innerHTML = `
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered align-middle" id="tblLTA">
+        ${head}
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+    <div class="mt-2 d-flex gap-2">
+      <button id="btnCopiarLTA"  class="btn btn-outline-secondary btn-sm">Copiar JSON</button>
+      <button id="btnDescargarLTA" class="btn btn-outline-secondary btn-sm">Descargar CSV</button>
+    </div>
+  `;
+
+  // Pintado cuando cambia el select
+  div.querySelectorAll('.sel-estado').forEach(sel=>{
+    sel.onchange = () => {
+      const tr = sel.closest('tr');
+      applyRowEstado(tr, sel.value);
+    };
+  });
+
+  // Utilidades: copiar JSON y bajar CSV con lo editado
+  qs('btnCopiarLTA')?.addEventListener('click', ()=>{
+    const data = ltaLeerTablaActual();
+    navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+    alert('Copiado al portapapeles ✔');
+  });
+  qs('btnDescargarLTA')?.addEventListener('click', ()=>{
+    const data = ltaLeerTablaActual();
+    const csv = toCSV(data);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+    a.download = 'redise_lta.csv';
+    a.click();
+  });
+}
+
+// Lee valores *editados* de la tabla LTA
+function ltaLeerTablaActual(){
+  const tbl = qs('tblLTA'); if(!tbl) return [];
+  return Array.from(tbl.querySelectorAll('tbody tr')).map(tr=>{
+    return {
+      nodo:     valueOrEmpty(tr.querySelector('.ce-nodo')),
+      desde:    valueOrEmpty(tr.querySelector('.ce-desde')),
+      novedad:  valueOrEmpty(tr.querySelector('.ce-nov')),
+      fecha:    valueOrEmpty(tr.querySelector('.ce-fecha')),   // queda editable por si querés forzar otra fecha
+      servicio: valueOrEmpty(tr.querySelector('.ce-serv')),
+      ticket:   valueOrEmpty(tr.querySelector('.ce-tic')),
+      estado:   tr.querySelector('.sel-estado')?.value || 'ACTUALIZADA'
+    };
+  });
+}
+
+// CSV simple (comillas si corresponde)
+function toCSV(rows){
+  const cols = ['nodo','desde','novedad','fecha','servicio','ticket','estado'];
+  const escCSV = (s)=> {
+    s = String(s ?? '');
+    return /[",\n]/.test(s) ? `"${s.replaceAll('"','""')}"` : s;
   };
-  div.innerHTML = mk('INTERNADOS (muestra 10)', data.internado)
-                + mk('ALTAS (muestra 10)', data.alta)
-                + mk('FALLECIDOS (muestra 10)', data.fallecido);
+  const head = cols.join(',');
+  const body = rows.map(r => cols.map(c => escCSV(r[c])).join(',')).join('\n');
+  return head + '\n' + body;
 }
 
 // ============================

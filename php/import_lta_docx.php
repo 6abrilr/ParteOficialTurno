@@ -4,6 +4,7 @@
  * Soporta:
  *  - Formato narrativo del CCC: "CCIG ...: texto ..."
  *  - Formato tabular (PDF/Word): columnas NODO/DESDE/NOVEDADES/FECHA/SERVICIO/TICKET
+ * Devuelve: { ok:true, _src:"extractor", redise:[{nodo,desde,novedad,fecha,servicio,ticket}] }
  */
 require_once __DIR__.'/db.php';
 
@@ -37,22 +38,28 @@ try {
   }
   if (trim($text)==='') throw new Exception('No se pudo extraer texto. Si es PDF escaneado, hacé OCR.');
 
-  // === 2) Normalizar y tomar sólo la sección REDISE ===
+  // === 2) Normalizar y tomar la sección REDISE ===
   $clean = normalize_lta($text);
   $scope = recorta_seccion_redise($clean);
 
-  // === 3) Parseo (narrativo + tabular) ===
+  // === 3) Parseo (narrativo → tabular) ===
   $rows = parse_redise_narrativo($scope);
   if (empty($rows)) $rows = parse_redise_tabular($scope);
 
-  // Limpieza final y resumen
+  // Limpieza final, quitar “FOLIO …” y compactar
+  $rows = array_values(array_filter($rows, function($r){
+    $n = strtoupper(trim($r['nodo'] ?? ''));
+    return $n !== '' && !str_starts_with($n, 'FOLIO');
+  }));
+
+  // Resumen corto
   $redise = array_values(array_filter(array_map(function($r){
-    $r['nodo']     = trim($r['nodo']     ?? '');
-    $r['desde']    = trim($r['desde']    ?? '');
+    $r['nodo']     = trim($r['nodo'] ?? '');
+    $r['desde']    = trim($r['desde'] ?? '');
     $r['novedad']  = resumen_ccc(trim($r['novedad'] ?? ''));
-    $r['fecha']    = trim($r['fecha']    ?? '');
+    $r['fecha']    = trim($r['fecha'] ?? '');     // en UI la sobreescribimos con FECHA TURNO
     $r['servicio'] = trim($r['servicio'] ?? '');
-    $r['ticket']   = trim($r['ticket']   ?? '');
+    $r['ticket']   = trim($r['ticket'] ?? '');
     return $r['nodo'] && $r['novedad'] ? $r : null;
   }, $rows)));
 
@@ -149,14 +156,14 @@ function recorta_seccion_redise(string $t): string {
 /* A) Narrativo CCC: "CCIG XXX: texto..." */
 function parse_redise_narrativo(string $txt): array {
   $out = [];
-  // Asegurar saltos antes de cada "CCIG ...:" para que el regex encuentre bloques
+  // Forzar salto antes de cada "CCIG ...:" para detectar bloques
   $txt = preg_replace('/\\s+(CCIG\\s+[A-ZÁÉÍÓÚÑ ]{3,}:)/u', "\n$1", $txt);
 
   if (preg_match_all('/^\\s*(CCIG\\s+[A-ZÁÉÍÓÚÑ ]{3,})\\s*:\\s*(.+?)(?=\\n\\s*CCIG\\s+[A-ZÁÉÍÓÚÑ ]{3,}\\s*:|\\Z)/us', $txt, $m, PREG_SET_ORDER)) {
     foreach ($m as $mm) {
       $block = trim($mm[2]);
 
-      $desde = detect_desde($block);
+      $desde = detect_desde($block, true); // true => tomar la ÚLTIMA fecha corta
       $fecha = detect_fecha($block);
       $serv  = detect_servicio($block);
       $tic   = detect_ticket($block);
@@ -174,19 +181,20 @@ function parse_redise_narrativo(string $txt): array {
   return $out;
 }
 
-/* B) Tabular (encabezados NODO/DESDE/...) */
+/* B) Tabular: encabezados NODO/DESDE/... */
 function parse_redise_tabular(string $txt): array {
-  $lines = array_values(array_filter(explode("\n", $txt), fn($l)=>trim($l)!==''));
-  // Quitar encabezados de columna si existen
+  $lines = array_values(array_filter(explode("\n", $txt), fn($l)=>trim($l)!=='' ));
+
+  // Sacar encabezados y “FOLIO …”
   $lines = array_values(array_filter($lines, fn($l)=>!preg_match('/^(NODO|DESDE|NOVEDAD|NOVEDADES|FECHA|SERVICIO|TICKET)\\b/i',$l)));
+  $lines = array_values(array_filter($lines, fn($l)=>!preg_match('/^FOLIO\\b/i',$l)));
 
   $rows = [];
   $buf  = [];
 
   $isNodo = function($l){
     $l = trim($l);
-    // Nodos típicos y otros encabezados de unidad en mayúsculas
-    return (bool)preg_match('/^(CCIG\\s+[A-ZÁÉÍÓÚÑ ]{3,}|CA\\s*COM|CIA\\s*COM|BCOM|BRIG\\s*COM|CCIE)/u', $l);
+    return (bool)preg_match('/^(CCIG\\s+[A-ZÁÉÍÓÚÑ ]{3,}|CA\\s*COM|CIA\\s*COM|BCOM|BRIG\\s*COM|CCIE)\\b/u', $l);
   };
 
   foreach ($lines as $l) {
@@ -201,22 +209,22 @@ function parse_redise_tabular(string $txt): array {
 
   $out = [];
   foreach ($rows as $r) {
-    // NODO = prefijo hasta primer “desde/fecha/serv/:” o la primera fecha corta
-    $nodo = trim(preg_replace('/\\s{2,}/',' ', $r));
-    if (preg_match('/^(CCIG\\s+[A-ZÁÉÍÓÚÑ ]{3,}|CA\\s*COM|CIA\\s*COM|BCOM|BRIG\\s*COM|CCIE)\\b/u', $nodo, $mn)) {
-      $nodo = trim($mn[0]);
-    }
+    // Nodo
+    $nodo = '';
+    if (preg_match('/^(CCIG\\s+[A-ZÁÉÍÓÚÑ ]{3,}|CA\\s*COM|CIA\\s*COM|BCOM|BRIG\\s*COM|CCIE)\\b/u', $r, $mn)) $nodo = trim($mn[0]);
 
-    $desde = detect_desde($r);
+    // Fechas / servicio / ticket
+    $desde = detect_desde($r, true); // última fecha corta del bloque (suele coincidir con DESDE real)
     $fecha = detect_fecha($r);
     $serv  = detect_servicio($r);
     $tic   = detect_ticket($r);
 
-    // Novedad = quitar “nodo + desde” y lo de cola (fecha/serv/ticket)
+    // Novedad = quitar “nodo” al inicio y “fecha/serv/ticket” al final
     $nov = $r;
     if ($nodo)  $nov = preg_replace('/^'.preg_quote($nodo,'/').'\\b\\s*/u','', $nov);
     if ($desde) $nov = preg_replace('/^'.preg_quote($desde,'/').'\\b\\s*/u','', $nov);
     if ($fecha) $nov = preg_replace('/\\b'.preg_quote($fecha,'/').'\\b.*$/u','', $nov);
+    $nov = trim($nov);
 
     $out[] = [
       'nodo'     => $nodo,
@@ -232,9 +240,11 @@ function parse_redise_tabular(string $txt): array {
 
 /* ========================= Detectores ========================= */
 
-function detect_desde(string $s): ?string {
-  // ENE24 | 24FEB25 | 09OCT24 | 16MAY25
-  if (preg_match('/\\b(\\d{1,2}[A-Z]{3}\\d{2}|[A-Z]{3}\\d{2})\\b/u', $s, $m)) return $m[1];
+function detect_desde(string $s, bool $takeLast=false): ?string {
+  // ENE24 | 24FEB25 | 09OCT24 | 16MAY25 (preferimos la ÚLTIMA si $takeLast=true)
+  if (preg_match_all('/\\b(\\d{1,2}[A-Z]{3}\\d{2}|[A-Z]{3}\\d{2})\\b/u', $s, $m) && !empty($m[1])) {
+    return $takeLast ? end($m[1]) : $m[1][0];
+  }
   return null;
 }
 function detect_fecha(string $s): ?string {
@@ -250,13 +260,12 @@ function detect_ticket(string $s): ?string {
   return null;
 }
 function limpia_colas(string $s): string {
-  // Quitar colas tipo “— —”, “;”, repeticiones
   $s = preg_replace('/\\s*—+\\s*$/','', $s);
   $s = preg_replace('/\\s{2,}/',' ', $s);
   return trim($s);
 }
 function resumen_ccc(string $s): string {
-  // Resumen corto y limpio
+  // Resumen breve
   $s = preg_replace('/^De acuerdo (?:al|a)\\s+MM[^,]*\\,?\\s*/i','', $s);
   $s = preg_replace('/\\b(informan?|se informa(n)?)\\b/iu','', $s);
   $s = preg_replace('/\\s+por\\s+mantenimiento,?/i',' (mantenimiento) ', $s);
