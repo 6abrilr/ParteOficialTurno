@@ -17,45 +17,44 @@
   <h1 class="h4 mb-3">PARTE DE NOVEDADES – Batallón de Comunicaciones 602</h1>
 
   <div class="row g-3">
-    <!-- Generar Parte -->    
-  <div class="col-lg-8">
-    <div class="card">
-      <div class="card-header">Generar Parte</div>
-      <div class="card-body">
-        <form class="row g-3" id="frmParte">
-          <div class="col-md-3">
-            <label class="form-label">Desde</label>
-            <input type="datetime-local" id="desde" class="form-control" required>
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Hasta</label>
-            <input type="datetime-local" id="hasta" class="form-control" required>
-          </div>
-
-          <div class="col-md-3">
-            <label class="form-label">Oficial de turno</label>
-            <input type="text" id="oficial" class="form-control" placeholder="Ej.: ST SCD Néstor Rojas">
-          </div>
-          <div class="col-md-3">
-            <label class="form-label">Suboficial de turno</label>
-            <input type="text" id="suboficial" class="form-control" placeholder="Ej.: CI Of Manuel Herrera">
-          </div>
-
-          <div class="col-12 d-flex justify-content-between align-items-end">
-            <div class="d-flex gap-2">
-              <button class="btn btn-primary" type="submit">Ver Parte</button>
-              <a id="linkParte" class="btn btn-success d-none" target="_blank">Abrir Parte</a>
+    <!-- Generar Parte -->
+    <div class="col-lg-8">
+      <div class="card">
+        <div class="card-header">Generar Parte</div>
+        <div class="card-body">
+          <form class="row g-3" id="frmParte">
+            <div class="col-md-3">
+              <label class="form-label">Desde</label>
+              <input type="datetime-local" id="desde" class="form-control" required>
             </div>
-            <button type="button" class="btn btn-outline-secondary" id="btnGuardarEnc" title="Guarda fechas y firmas para el parte">
-              Guardar encabezado
-            </button>
-          </div>
-        </form>
-        <div class="small-muted mt-2">Guardá el encabezado para que quede registrado en la base y se muestre en el Parte.</div>
+            <div class="col-md-3">
+              <label class="form-label">Hasta</label>
+              <input type="datetime-local" id="hasta" class="form-control" required>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Oficial de turno</label>
+              <input type="text" id="oficial" class="form-control" placeholder="Ej.: ST SCD Néstor Rojas">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Suboficial de turno</label>
+              <input type="text" id="suboficial" class="form-control" placeholder="Ej.: CI Of Manuel Herrera">
+            </div>
+
+            <div class="col-12 d-flex justify-content-between align-items-end">
+              <div class="d-flex gap-2">
+                <button class="btn btn-primary" type="submit">Ver Parte</button>
+                <a id="linkParte" class="btn btn-success d-none" target="_blank">Abrir Parte</a>
+              </div>
+              <button type="button" class="btn btn-outline-secondary" id="btnGuardarEnc" title="Guarda fechas y firmas para el parte">
+                Guardar encabezado
+              </button>
+            </div>
+          </form>
+          <div class="small-muted mt-2">Guardá el encabezado para que quede registrado en la base y se muestre en el Parte.</div>
+        </div>
       </div>
     </div>
-  </div>
-
 
     <!-- Pendientes -->
     <div class="col-lg-4">

@@ -14,7 +14,7 @@ const esc = (s) => String(s ?? '')
 
 // ===== Fecha por defecto: HOY 08:00 → MAÑANA 08:00 =====
 (function setDefaultDates0800(){
-  const fDesde = document.getElementById('desde'), fHasta = document.getElementById('hasta');
+  const fDesde = qs('desde'), fHasta = qs('hasta');
   if (!fDesde || !fHasta) return;
 
   const now = new Date();
@@ -38,42 +38,55 @@ qs('btnGuardarEnc')?.addEventListener('click', async ()=>{
     oficial_turno: (qs('oficial')?.value || '').trim(),
     suboficial_turno: (qs('suboficial')?.value || '').trim()
   };
-  await fetch(API_PARTE,{method:'POST', body: JSON.stringify(payload)});
-  const a = qs('linkParte');
-  if (a) {
-    a.href = `parte.php?desde=${encodeURIComponent(payload.fecha_desde)}&hasta=${encodeURIComponent(payload.fecha_hasta)}`;
-    a.classList.remove('d-none');
+  try{
+    const r = await fetch(API_PARTE,{method:'POST', body: JSON.stringify(payload)});
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error||'No se pudo guardar');
+    const a = qs('linkParte');
+    if (a) {
+      a.href = `parte.php?desde=${encodeURIComponent(payload.fecha_desde)}&hasta=${encodeURIComponent(payload.fecha_hasta)}`;
+      a.classList.remove('d-none');
+    }
+    alert('Encabezado guardado ✔');
+  }catch(err){
+    alert('Error al guardar encabezado: ' + err.message);
   }
 });
 
 // ===== Novedades: cargar pendientes (oculta resueltas) =====
 async function cargarPendientes(){
   if (!qs('tblNovedades')) return;
-  const r = await fetch(`${API_NOV}?action=lista`);
-  const data = await r.json();
-  const tb = qs('tblNovedades').querySelector('tbody');
-  tb.innerHTML = '';
-  data.forEach(n=>{
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${fmt(n.fecha_inicio)}</td>
-      <td><strong>${esc(n.titulo)}</strong><br><small class="text-muted">${esc((n.descripcion||'').slice(0,140))}...</small></td>
-      <td>${esc(n.categoria)}</td>
-      <td>${esc(n.unidad ?? '')}</td>
-      <td>${esc(n.prioridad)}</td>
-      <td class="text-nowrap">
-        <button class="btn btn-sm btn-outline-success" data-resolver="${n.id}">Resolver</button>
-      </td>`;
-    tb.appendChild(tr);
-  });
-  tb.querySelectorAll('[data-resolver]').forEach(b=>{
-    b.onclick = async ()=>{
-      await fetch(`${API_NOV}?action=resolver`,{method:'POST', body: JSON.stringify({id:+b.dataset.resolver})});
-      cargarPendientes();
-    };
-  });
-  const ts = qs('ts');
-  if (ts) ts.textContent = 'Actualizado: ' + new Date().toLocaleString('es-AR');
+  try{
+    const r = await fetch(`${API_NOV}?action=lista`);
+    const data = await r.json();
+    const tb = qs('tblNovedades').querySelector('tbody');
+    tb.innerHTML = '';
+    data.forEach(n=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${fmt(n.fecha_inicio)}</td>
+        <td><strong>${esc(n.titulo)}</strong><br><small class="text-muted">${esc((n.descripcion||'').slice(0,140))}...</small></td>
+        <td>${esc(n.categoria)}</td>
+        <td>${esc(n.unidad ?? '')}</td>
+        <td>${esc(n.prioridad)}</td>
+        <td class="text-nowrap">
+          <button class="btn btn-sm btn-outline-success" data-resolver="${n.id}">Resolver</button>
+        </td>`;
+      tb.appendChild(tr);
+    });
+    tb.querySelectorAll('[data-resolver]').forEach(b=>{
+      b.onclick = async ()=>{
+        await fetch(`${API_NOV}?action=resolver`,{
+          method:'POST', body: JSON.stringify({id:+b.dataset.resolver})
+        });
+        cargarPendientes();
+      };
+    });
+    const ts = qs('ts');
+    if (ts) ts.textContent = 'Actualizado: ' + new Date().toLocaleString('es-AR');
+  }catch(e){
+    console.error(e);
+  }
 }
 cargarPendientes();
 
@@ -91,7 +104,7 @@ qs('frmNovedad')?.addEventListener('submit', async (e)=>{
     titulo: qs('titulo')?.value.trim(),
     descripcion: qs('descripcion')?.value.trim(),
     categoria_id: parseInt(qs('categoria_id')?.value ?? '1',10),
-    unidad_id: null,
+    unidad_id: null, // si luego mapeás unidad_txt → unidad_id, actualizar aquí
     servicio: (qs('servicio')?.value || '').trim(),
     ticket: (qs('ticket')?.value || '').trim(),
     prioridad: qs('prioridad')?.value || 'MEDIA',
@@ -182,37 +195,42 @@ const ESTADOS = ['EN LINEA','SIN SERVICIO','NOVEDAD'];
 
 async function cargarSistemaTabla(divId, catId){
   const div = qs(divId); if(!div) return;
-  const r = await fetch(`${API_SIST}?action=listar&cat=${catId}`);
-  const rows = await r.json();
-  if(!rows.length){ div.innerHTML = '<div class="text-muted">Sin elementos</div>'; return; }
+  try{
+    const r = await fetch(`${API_SIST}?action=listar&cat=${catId}`);
+    const rows = await r.json();
+    if(!rows.length){ div.innerHTML = '<div class="text-muted">Sin elementos</div>'; return; }
 
-  const head = `<thead><tr><th style="width:240px">Nombre</th><th style="width:160px">Estado</th><th>Novedad</th><th style="width:140px">Ticket</th></tr></thead>`;
-  const body = rows.map(x=>`<tr data-id="${x.id}">
-    <td>${esc(x.nombre)}</td>
-    <td>
-      <select class="form-select form-select-sm estado">
-        ${ESTADOS.map(s=>`<option ${s===x.estado?'selected':''}>${s}</option>`).join('')}
-      </select>
-    </td>
-    <td><input class="form-control form-control-sm nov" value="${esc(x.novedad??'')}" placeholder="Detalle (opcional)"></td>
-    <td><input class="form-control form-control-sm tic" value="${esc(x.ticket??'')}" placeholder="GLPI / MM / ..."></td>
-  </tr>`).join('');
+    const head = `<thead><tr><th style="width:240px">Nombre</th><th style="width:160px">Estado</th><th>Novedad</th><th style="width:140px">Ticket</th></tr></thead>`;
+    const body = rows.map(x=>`<tr data-id="${x.id}">
+      <td>${esc(x.nombre)}</td>
+      <td>
+        <select class="form-select form-select-sm estado">
+          ${ESTADOS.map(s=>`<option ${s===x.estado?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </td>
+      <td><input class="form-control form-control-sm nov" value="${esc(x.novedad??'')}" placeholder="Detalle (opcional)"></td>
+      <td><input class="form-control form-control-sm tic" value="${esc(x.ticket??'')}" placeholder="GLPI / MM / ..."></td>
+    </tr>`).join('');
 
-  div.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle">${head}<tbody>${body}</tbody></table></div>`;
+    div.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle">${head}<tbody>${body}</tbody></table></div>`;
 
-  div.querySelectorAll('tr[data-id]').forEach(tr=>{
-    const id = +tr.dataset.id;
-    const sel = tr.querySelector('.estado');
-    const nov = tr.querySelector('.nov');
-    const tic = tr.querySelector('.tic');
-    const save = async ()=>{
-      await fetch(`${API_SIST}?action=guardar`,{
-        method:'POST',
-        body: JSON.stringify({id, estado: sel.value, novedad: nov.value.trim(), ticket: tic.value.trim()})
-      });
-    };
-    sel.onchange = save; nov.onchange = save; tic.onchange = save;
-  });
+    // Guardado automático
+    div.querySelectorAll('tr[data-id]').forEach(tr=>{
+      const id = +tr.dataset.id;
+      const sel = tr.querySelector('.estado');
+      const nov = tr.querySelector('.nov');
+      const tic = tr.querySelector('.tic');
+      const save = async ()=>{
+        await fetch(`${API_SIST}?action=guardar`,{
+          method:'POST',
+          body: JSON.stringify({id, estado: sel.value, novedad: nov.value.trim(), ticket: tic.value.trim()})
+        });
+      };
+      sel.onchange = save; nov.onchange = save; tic.onchange = save;
+    });
+  }catch(e){
+    console.error(e);
+  }
 }
 
 cargarSistemaTabla('tblServ',2);

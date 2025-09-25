@@ -1,4 +1,7 @@
 <?php
+$autoload = __DIR__ . '/../vendor/autoload.php';
+if (is_file($autoload)) require_once $autoload;
+
 require_once __DIR__.'/config.php';
 
 function pdo(): PDO {
