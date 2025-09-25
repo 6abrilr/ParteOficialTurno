@@ -155,8 +155,7 @@ qs('btnImpCenope')?.addEventListener('click', async ()=>{
 
 function renderPreviewCenope(data){
   const div = qs('previewTables'); if(!div) return;
-
-  const mkTable = (title, rows)=>{
+  const mk = (title, rows)=>{
     if(!rows || !rows.length) return `<h6 class='mt-2'>${esc(title)}</h6><div class='text-muted'>SIN NOVEDAD</div>`;
     const head = `<thead><tr><th>Nro</th><th>Grado</th><th>Apellido y Nombre</th><th>Arma</th><th>Unidad/Destino</th><th>Fecha</th><th>Habitación</th><th>Hospital</th></tr></thead>`;
     const body = rows.slice(0,10).map(r=>`<tr>
@@ -171,16 +170,9 @@ function renderPreviewCenope(data){
     </tr>`).join('');
     return `<h6 class='mt-2'>${esc(title)}</h6><div class='table-responsive'><table class='table table-sm table-bordered'>${head}<tbody>${body}</tbody></table></div>`;
   };
-
-  const mkList = (title, items)=>{
-    if(!items || !items.length) return `<h6 class='mt-2'>${esc(title)}</h6><div class='text-muted'>SIN NOVEDAD</div>`;
-    const li = items.slice(0,10).map(s=>`<li>${esc(s)}</li>`).join('');
-    return `<h6 class='mt-2'>${esc(title)}</h6><ul class='mb-2'>${li}</ul>`;
-  };
-
-  div.innerHTML = mkTable('INTERNADOS (muestra 10)', data.internado)
-                + mkTable('ALTAS (muestra 10)', data.alta)
-                + mkList('FALLECIDOS (muestra 10)', data.fallecido);
+  div.innerHTML = mk('INTERNADOS (muestra 10)', data.internado)
+                + mk('ALTAS (muestra 10)', data.alta)
+                + mk('FALLECIDOS (muestra 10)', data.fallecido);
 }
 
 // ============================
@@ -208,7 +200,6 @@ async function cargarSistemaTabla(divId, catId){
 
   div.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle">${head}<tbody>${body}</tbody></table></div>`;
 
-  // Guardado automático
   div.querySelectorAll('tr[data-id]').forEach(tr=>{
     const id = +tr.dataset.id;
     const sel = tr.querySelector('.estado');
@@ -229,3 +220,38 @@ cargarSistemaTabla('tblIsp',3);
 cargarSistemaTabla('tblSitelpar',4);
 cargarSistemaTabla('tblDC',5);
 cargarSistemaTabla('tblSITM2',6);
+
+// ==========================
+//   IMPORTADOR LTA (DOCX)
+// ==========================
+qs('btnPrevLTA')?.addEventListener('click', async ()=>{
+  const f = qs('docxLta')?.files?.[0];
+  if(!f) return alert('Elegí el DOCX del LTA');
+  const fd = new FormData(); fd.append('docx', f); fd.append('dry','1');
+  if (qs('ltaInfo')) qs('ltaInfo').textContent = 'Procesando DOCX (previsualización)...';
+  try{
+    const r = await fetch(API_LTA,{method:'POST', body: fd});
+    const data = await r.json();
+    if(!data.ok) throw new Error(data.error||'Error al procesar DOCX');
+    qs('ltaInfo').textContent = `Internados: ${data.internado.length} | Altas: ${data.alta.length} | Fallecidos: ${data.fallecido.length}`;
+    qs('btnImpLTA').disabled = false;
+    qs('ltaPreview').textContent = JSON.stringify(data, null, 2).slice(0,2000)+'...';
+  }catch(err){
+    qs('ltaInfo').textContent = 'Error: '+ err.message;
+  }
+});
+
+qs('btnImpLTA')?.addEventListener('click', async ()=>{
+  const f = qs('docxLta')?.files?.[0];
+  if(!f) return;
+  const fd = new FormData(); fd.append('docx', f); fd.append('dry','0');
+  qs('ltaInfo').textContent = 'Importando a la base...';
+  try{
+    const r = await fetch(API_LTA,{method:'POST', body: fd});
+    const data = await r.json();
+    if(!data.ok) throw new Error(data.error||'Error al importar DOCX');
+    qs('ltaInfo').textContent = `Importado. Internados: ${data.internado} | Altas: ${data.alta} | Fallecidos: ${data.fallecido}`;
+  }catch(err){
+    qs('ltaInfo').textContent = 'Error: '+ err.message;
+  }
+});

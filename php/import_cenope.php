@@ -1,19 +1,13 @@
 <?php
 /**
  * Importa Anexo 2 del CENOPE (PDF) → tablas personal_*.
- * - Tolera filas multi-línea (hasta 6 líneas).
- * - Limpia sellos “BCOM 602TRAF” y similares.
- * - FILTRA por Comunicaciones:
- *     • OFICIALES / SUBOFICIALES: ARMA contiene “Com”
- *     • SOLDADOS VOLUNTARIOS: Destino en unidad de comunicaciones
- *
- * Requiere Poppler (pdftotext). Si falla la autodetección, fijar $PDFTOTEXT.
+ * Requiere Poppler (pdftotext).
  */
 require_once __DIR__.'/db.php';
 
 /* === Config ===
- * Dejar vacío para autodetectar. Si falla, poner la ruta COMPLETA al ejecutable.
- * Ej.: 'C:\\Release-25.07.0-0\\Library\\bin\\pdftotext.exe'
+ * Si falla la autodetección, dejar EXACTA la ruta al binario pdftotext.exe
+ * OJO: ¡No confundir con pdfinfo.exe!
  */
 $PDFTOTEXT = 'C:\\Release-25.07.0-0\\Library\\bin\\pdftotext.exe';
 
@@ -105,9 +99,15 @@ function pdf_to_text(string $pdf): array {
 
 function resolve_pdftotext(): string {
   global $PDFTOTEXT;
-  if ($PDFTOTEXT && is_file($PDFTOTEXT)) return $PDFTOTEXT;
+  if ($PDFTOTEXT) {
+    if (stripos($PDFTOTEXT, 'pdfinfo.exe') !== false) {
+      throw new Exception('Configuraste "pdfinfo.exe". Debe ser "pdftotext.exe". Ruta esperada p.ej.: C:\\Release-25.07.0-0\\Library\\bin\\pdftotext.exe');
+    }
+    if (is_file($PDFTOTEXT)) return $PDFTOTEXT;
+  }
 
   $candidatos = [
+    'C:\\Release-25.07.0-0\\Library\\bin\\pdftotext.exe',
     'C:\\poppler-25.09.1\\Library\\bin\\pdftotext.exe',
     'C:\\poppler\\Library\\bin\\pdftotext.exe',
     'C:\\Program Files\\poppler\\Library\\bin\\pdftotext.exe',
@@ -126,9 +126,8 @@ function resolve_pdftotext(): string {
   throw new Exception('No se encontró pdftotext. Instale Poppler y agregue "...\\Library\\bin" al PATH, o complete $PDFTOTEXT con la ruta exacta.');
 }
 
-/** Limpieza más agresiva (sellos, pies, dobles espacios) */
+/** Limpieza agresiva (sellos, pies, dobles espacios) */
 function normalize_text(string $t): string {
-  // Sellos diagonales frecuentes
   $t = preg_replace('/B\\s*C\\s*O\\s*M\\s*\\d+\\s*T\\s*R\\s*A\\s*F/i','',$t);
   $t = preg_replace('/RESERVADO/i','',$t);
   $t = preg_replace('/Powered\\s+by\\s+TCPDF.*/i','',$t);
@@ -144,7 +143,7 @@ function parse_cenope(string $txt): array {
   $outI=[]; $outA=[]; $outF=[];
   $cat=null; $modo=null;
 
-  $GRADOS = '(TG|GD|GB|CY|CR|TC|MY|CT|TP|TT|ST|SM|SP|SA|SI|SG|CI|CB|VP|VS|SV|SOLD)';
+  $GRADOS='(TG|GD|GB|CY|CR|TC|MY|CT|TP|TT|ST|SM|SP|SA|SI|SG|CI|CB|VP|VS|SV|SOLD)';
   $lines = preg_split('/\\n/', $txt);
   $n = count($lines);
 
@@ -156,37 +155,30 @@ function parse_cenope(string $txt): array {
     if (!$cat || !$modo) continue;
 
     if (preg_match('/\\b'.$GRADOS.'\\b/i',$l,$gm, PREG_OFFSET_CAPTURE)) {
-      // Armo un buffer con esta y las próximas 5 líneas (algunas filas bajan mucho)
       $buf = $l;
       for ($k=1;$k<=5 && ($i+$k)<$n;$k++) $buf .= ' '.$lines[$i+$k];
       $buf = preg_replace('/\\s{2,}/',' ',$buf);
 
-      // Intento recortar ruido final (NOSOCOMIO/HOSPITAL campos largos)
       $fecha = extrae_fecha($buf);
       $hab   = extrae_hab($buf);
       $hosp  = guess_hospital(preg_split('/\\s+/',$buf));
 
-      // Grado + resto
       if (!preg_match('/\\b'.$GRADOS.'\\b/i',$buf,$m2, PREG_OFFSET_CAPTURE)) continue;
       $gradoRaw = $m2[0][0];
       $grado = strtoupper(preg_replace('/[^A-Z]/','',$gradoRaw));
       $post = trim(substr($buf, $m2[0][1] + strlen($m2[0][0])));
 
-      // Corto por “En Actividad” / “Retirado”
       $revCut = preg_split('/\\b(En Actividad|Retirado)\\b/i', $post, 2, PREG_SPLIT_DELIM_CAPTURE);
-      $pre = trim($revCut[0] ?? '');             // nombre + arma
-      $postRev = trim($revCut[2] ?? '');         // "- Destino (Uxxyy) ..."
+      $pre = trim($revCut[0] ?? '');
+      $postRev = trim($revCut[2] ?? '');
 
-      // Destino si está luego del guión
       $destino = '';
       if ($postRev !== '' && preg_match('/-\\s*([^0-9]{2,}?)(?:\\s*\\(U\\d+\\))?/i',$postRev,$md)) $destino = trim($md[1]);
 
-      // Nombre + Arma: último token (o par de tokens cortos) del “pre”
       $tokens = preg_split('/\\s+/', $pre);
       $arma = array_pop($tokens) ?? '';
       while (!empty($tokens) && mb_strlen($arma)<=4 && mb_strlen(end($tokens))<=4) { $arma = array_pop($tokens).' '.$arma; }
       $nombre = trim(implode(' ', $tokens));
-
       if ($nombre==='') continue;
 
       $row = [
@@ -202,7 +194,7 @@ function parse_cenope(string $txt): array {
         'Hospital' => $hosp,
       ];
 
-      // FILTRO Comunicaciones
+      // Filtro Comunicaciones
       if (pasaFiltroCom($row)) {
         if ($modo==='INTERNADOS') $outI[]=$row; else $outA[]=$row;
       }
@@ -211,13 +203,12 @@ function parse_cenope(string $txt): array {
     if (preg_match('/\\bFALLECID[OA]S?\\b/i',$l)) $outF[] = trim($l);
   }
 
-  // Orden + Nro (ranking unificado)
+  // Orden + Nro
   $rank = [
     'TG'=>0,'GD'=>0.1,'GB'=>0.2,'CY'=>0.5,
     'CR'=>1,'TC'=>2,'MY'=>3,'CT'=>4,'TP'=>5,'TT'=>6,'ST'=>7,
     'SM'=>10,'SP'=>11,'SA'=>12,'SI'=>13,'SG'=>14,
-    'CI'=>15,'CB'=>16,
-    'VP'=>30,'VS'=>31,'SV'=>32,'SOLD'=>33
+    'CI'=>15,'CB'=>16,'VP'=>30,'VS'=>31,'SV'=>32,'SOLD'=>33
   ];
   $ord = function($a,$b) use($rank){
     $ra=$rank[$a['Grado']]??999; $rb=$rank[$b['Grado']]??999;
@@ -229,14 +220,13 @@ function parse_cenope(string $txt): array {
   return ['internado'=>$outI,'alta'=>$outA,'fallecido'=>$outF];
 }
 
-/* === Filtro Comunicaciones === */
 function pasaFiltroCom(array $r): bool {
   $cat = $r['categoria'];
   $arma = strtoupper($r['Arma'] ?? '');
   $dest = strtoupper($r['Unidad'] ?? '');
 
   if ($cat==='OFICIALES' || $cat==='SUBOFICIALES') {
-    return (strpos($arma, 'COM') !== false); // “Com”, “Com.”
+    return (strpos($arma, 'COM') !== false);
   }
   if ($cat==='SOLDADOS VOLUNTARIOS') {
     return esUnidadCom($dest);
@@ -258,7 +248,6 @@ function esUnidadCom(string $dest): bool {
   return (bool)preg_match($pat, $dest);
 }
 
-/* === Extras de parseo === */
 function extrae_fecha(string &$s): ?string {
   if (preg_match('/(\\d{1,2}[A-Za-z]{3}\\d{2}|\\d{1,2}[\\/\\-]\\d{1,2}[\\/\\-]\\d{2,4})\\b/',$s,$m,PREG_OFFSET_CAPTURE)) {
     $pos = $m[0][1]; $len = strlen($m[0][0]);
@@ -282,7 +271,6 @@ function map_cat(string $s): string {
   if (str_starts_with($s,'SUBOFI')) return 'SUBOFICIALES';
   return 'SOLDADOS VOLUNTARIOS';
 }
-
 function guess_hospital(array $cols): ?string {
   $s = strtoupper(implode(' ', array_slice($cols, -5)));
   foreach ([
@@ -292,7 +280,6 @@ function guess_hospital(array $cols): ?string {
   ] as $h) { if (str_contains($s, $h)) return $h; }
   return null;
 }
-
 function norm_date(?string $s): ?string {
   if(!$s) return null;
   if (preg_match('/^(\\d{1,2})([A-Za-z]{3})(\\d{2})$/',$s,$m)) {

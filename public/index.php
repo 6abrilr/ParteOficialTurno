@@ -5,137 +5,201 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Parte de Novedades – B Com 602</title>
-
-  <link id="bs-cdn" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
-        onerror="this.remove();document.getElementById('bs-local').disabled=false;">
-  <link id="bs-local" href="vendor/bootstrap/bootstrap.min.css" rel="stylesheet" disabled>
-  <link href="styles.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    /* Marca de agua */
-    body {
-      background-image: url('img/escudo602.png');
-      background-repeat: no-repeat;
-      background-position: center 20%;
-      background-attachment: fixed;
-      background-size: 420px auto;
-    }
-    @media print {
-      body { background: none; } /* algunos navegadores no imprimen bg; agregamos en parte.php */
-    }
+    body{ padding:24px }
+    .card{ box-shadow:0 1px 6px rgba(0,0,0,.06) }
+    .small-muted{ color:#6c757d; font-size:12px }
   </style>
 </head>
 <body class="bg-light">
-<div class="container py-4">
-  <header class="mb-4 text-center">
-   <!--<img src="img/escudo602confondo.jpeg" alt="Escudo 602" style="height:90px; opacity:.85">-->
-    <div class="ea-motto small text-muted mt-2">Ejército Argentino – “Año de la Reconstrucción de la Nación Argentina”</div>
-    <h1 class="h3 fw-bold mt-2">PARTE DE NOVEDADES DEL ARMA DE COMUNICACIONES</h1>
-    <div class="unit text-uppercase">Batallón de Comunicaciones 602</div>
-  </header>
+<div class="container">
+  <h1 class="h4 mb-3">PARTE DE NOVEDADES – Batallón de Comunicaciones 602</h1>
 
-  <!-- Encabezado del Parte -->
-  <div class="card shadow-sm mb-3">
-    <div class="card-header">Encabezado del Parte</div>
-    <div class="card-body">
-      <form id="frmEnc" class="row g-2 align-items-end">
-        <div class="col-md-3">
-          <label class="form-label">Desde</label>
-          <input type="datetime-local" id="desde" class="form-control" required>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Hasta</label>
-          <input type="datetime-local" id="hasta" class="form-control" required>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Oficial de turno</label>
-          <input type="text" id="oficial" class="form-control" placeholder="Grado Apellido, Nombres" required>
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Suboficial de turno</label>
-          <input type="text" id="suboficial" class="form-control" placeholder="Grado Apellido, Nombres" required>
-        </div>
-        <div class="col-12 d-flex gap-2 mt-2">
-          <button class="btn btn-primary" id="btnGuardarEnc" type="button">Guardar encabezado</button>
-          <a id="linkParte" class="btn btn-outline-success ms-auto d-none" target="_blank">Abrir Parte</a>
-        </div>
-      </form>
+  <div class="row g-3">
+    <!-- Generar Parte -->    
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header">Generar Parte</div>
+      <div class="card-body">
+        <form class="row g-3" id="frmParte">
+          <div class="col-md-3">
+            <label class="form-label">Desde</label>
+            <input type="datetime-local" id="desde" class="form-control" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Hasta</label>
+            <input type="datetime-local" id="hasta" class="form-control" required>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Oficial de turno</label>
+            <input type="text" id="oficial" class="form-control" placeholder="Ej.: ST SCD Néstor Rojas">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Suboficial de turno</label>
+            <input type="text" id="suboficial" class="form-control" placeholder="Ej.: CI Of Manuel Herrera">
+          </div>
+
+          <div class="col-12 d-flex justify-content-between align-items-end">
+            <div class="d-flex gap-2">
+              <button class="btn btn-primary" type="submit">Ver Parte</button>
+              <a id="linkParte" class="btn btn-success d-none" target="_blank">Abrir Parte</a>
+            </div>
+            <button type="button" class="btn btn-outline-secondary" id="btnGuardarEnc" title="Guarda fechas y firmas para el parte">
+              Guardar encabezado
+            </button>
+          </div>
+        </form>
+        <div class="small-muted mt-2">Guardá el encabezado para que quede registrado en la base y se muestre en el Parte.</div>
+      </div>
     </div>
   </div>
 
-  <div class="row g-3">
-    <!-- IZQ: CENOPE + LTA -->
-    <div class="col-lg-5">
-      <div class="card shadow-sm mb-3">
-        <div class="card-header">Importar CENOPE (PDF) – Personal</div>
-        <div class="card-body">
-          <input type="file" id="pdfCenope" class="form-control" accept="application/pdf">
-          <div class="hstack gap-2 mt-2">
-            <button type="button" class="btn btn-outline-primary" id="btnPrevCenope">Previsualizar</button>
-            <button type="button" class="btn btn-success" id="btnImpCenope" disabled>Importar</button>
-          </div>
-          <div id="cenopeInfo" class="small text-muted mt-1"></div>
-          <div id="previewTables" class="mt-2"></div>
-        </div>
-      </div>
 
-      <div class="card shadow-sm">
-        <div class="card-header">Importar LTA / Parte (DOCX) – Novedades</div>
-        <div class="card-body">
-          <input type="file" id="docxLta" class="form-control"
-                 accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
-          <div class="hstack gap-2 mt-2">
-            <button type="button" class="btn btn-outline-primary" id="btnPrevLta">Previsualizar</button>
-            <button type="button" class="btn btn-success" id="btnImpLta" disabled>Importar</button>
-          </div>
-          <pre id="ltaPreview" class="small text-muted mb-0 mt-2" style="white-space:pre-wrap"></pre>
-        </div>
-      </div>
-    </div>
-
-    <!-- DER: Pendientes + Estados de Sistemas -->
-    <div class="col-lg-7">
-      <div class="card shadow-sm mb-3">
-        <div class="card-header d-flex align-items-center justify-content-between">
+    <!-- Pendientes -->
+    <div class="col-lg-4">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between">
           <span>Pendientes (oculta resueltas)</span>
-          <div class="small text-muted" id="ts"></div>
+          <span id="ts" class="small-muted"></span>
         </div>
         <div class="card-body">
           <div class="table-responsive">
             <table class="table table-sm align-middle" id="tblNovedades">
-              <thead>
-                <tr>
-                  <th>Fecha</th><th>Título</th><th>Categoría</th><th>Unidad</th><th>Prioridad</th><th>Acciones</th>
-                </tr>
-              </thead>
+              <thead><tr>
+                <th>Fecha</th><th>Título</th><th>Categoría</th><th>Unidad</th><th>Prioridad</th><th></th>
+              </tr></thead>
               <tbody></tbody>
             </table>
           </div>
-        </div>
-      </div>
-
-      <!-- Estados de Sistemas -->
-      <div class="card shadow-sm">
-        <div class="card-header">Estados de Sistemas</div>
-        <div class="card-body">
-          <h6>SISTEMAS – SERVICIOS</h6>
-          <div id="tblServ"></div>
-          <h6 class="mt-3">SISTEMAS – ISP EDIFICIO LIBERTADOR</h6>
-          <div id="tblIsp"></div>
-          <h6 class="mt-3">SITELPAR</h6>
-          <div id="tblSitelpar"></div>
-          <h6 class="mt-3">DATA CENTER</h6>
-          <div id="tblDC"></div>
-          <h6 class="mt-3">SITM2</h6>
-          <div id="tblSITM2"></div>
-          <small class="text-muted d-block mt-2">Los estados se guardan al cambiar.</small>
+          <div class="small text-muted">Refresca automáticamente al resolver.</div>
         </div>
       </div>
     </div>
-  </div>
-</div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
-        onerror="var s=document.createElement('script');s.src='vendor/bootstrap/bootstrap.bundle.min.js';document.body.appendChild(s);"></script>
+    <!-- Importar CENOPE (PDF) -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">Importar CENOPE (PDF) – Personal</div>
+        <div class="card-body">
+          <div class="hstack gap-2 mb-2">
+            <input type="file" id="pdfCenope" class="form-control" accept="application/pdf" style="max-width:560px">
+            <button class="btn btn-outline-secondary" id="btnPrevCenope">Previsualizar</button>
+            <button class="btn btn-success" id="btnImpCenope" disabled>Importar</button>
+          </div>
+          <div id="cenopeInfo" class="small-muted mb-2"></div>
+          <div id="previewTables"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Importar LTA (Word DOCX) -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">Importar LTA (DOCX) – Personal</div>
+        <div class="card-body">
+          <div class="hstack gap-2 mb-2">
+            <input type="file" id="docxLta" class="form-control" accept=".docx" style="max-width:560px">
+            <button class="btn btn-outline-secondary" id="btnPrevLTA">Previsualizar</button>
+            <button class="btn btn-success" id="btnImpLTA" disabled>Importar</button>
+          </div>
+          <div id="ltaInfo" class="small-muted mb-2"></div>
+          <div id="ltaPreview"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tablas de Sistemas -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">Sistemas – Servicios</div>
+        <div class="card-body" id="tblServ"></div>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">Sistemas – ISP Edificio Libertador</div>
+        <div class="card-body" id="tblIsp"></div>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">SITELPAR</div>
+        <div class="card-body" id="tblSitelpar"></div>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">Sistemas – Data Center</div>
+        <div class="card-body" id="tblDC"></div>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">Sistemas – SITM2</div>
+        <div class="card-body" id="tblSITM2"></div>
+      </div>
+    </div>
+
+    <!-- Formulario de alta/edición de Novedad -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">Nueva / Editar Novedad</div>
+        <div class="card-body">
+          <form id="frmNovedad" class="vstack gap-2">
+            <input type="hidden" id="id" />
+            <div class="row g-2">
+              <div class="col-md-7">
+                <label class="form-label">Título</label>
+                <input class="form-control" id="titulo" maxlength="140" required>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">Categoría</label>
+                <select class="form-select" id="categoria_id">
+                  <option value="1">Nodos REDISE</option>
+                  <option value="2">Servicios</option>
+                  <option value="3">ISP EL</option>
+                  <option value="4">SITELPAR</option>
+                  <option value="5">Data Center</option>
+                  <option value="6">SITM2</option>
+                </select>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">Prioridad</label>
+                <select class="form-select" id="prioridad">
+                  <option>MEDIA</option><option>ALTA</option><option>BAJA</option>
+                </select>
+              </div>
+              <div class="col-md-1 d-flex align-items-end">
+                <button type="button" class="btn btn-secondary w-100" id="btnNuevo">Nuevo</button>
+              </div>
+            </div>
+            <div class="row g-2">
+              <div class="col-md-8">
+                <label class="form-label">Descripción</label>
+                <textarea id="descripcion" class="form-control" rows="3" required></textarea>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Unidad</label>
+                <input id="unidad_txt" class="form-control" placeholder="CCIG ...">
+                <label class="form-label mt-2">Servicio</label>
+                <input id="servicio" class="form-control" placeholder="HF / WEBMAIL / ...">
+                <label class="form-label mt-2">Ticket</label>
+                <input id="ticket" class="form-control" placeholder="GLPI / N°">
+                <label class="form-label mt-2">Usuario</label>
+                <input id="usuario" class="form-control" placeholder="ST SCD Rojas">
+              </div>
+            </div>
+            <div><button class="btn btn-primary">Guardar</button></div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- row -->
+</div><!-- container -->
+
 <script src="app.js"></script>
 </body>
 </html>

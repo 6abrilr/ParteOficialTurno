@@ -1,28 +1,18 @@
 <?php
-// php/api_parte.php
+// Guarda encabezado del parte (fechas y firmas)
 require_once __DIR__.'/db.php';
 
-$method = $_SERVER['REQUEST_METHOD'];
+if ($_SERVER['REQUEST_METHOD']!=='POST') { json_out(['error'=>'Método no permitido'],405); }
 
-if ($method === 'GET') {
-  $row = pdo()->query("SELECT * FROM parte_encabezado ORDER BY id DESC LIMIT 1")->fetch();
-  header('Content-Type: application/json; charset=utf-8');
-  echo json_encode($row ?: [], JSON_UNESCAPED_UNICODE);
-  exit;
-}
+$body = json_decode(file_get_contents('php://input'), true) ?? [];
 
-if ($method === 'POST') {
-  $d = json_decode(file_get_contents('php://input'), true);
-  if (!$d) $d = $_POST;
-  $sql = "INSERT INTO parte_encabezado (fecha_desde, fecha_hasta, oficial_turno, suboficial_turno)
-          VALUES (?,?,?,?)";
-  pdo()->prepare($sql)->execute([
-    $d['fecha_desde'], $d['fecha_hasta'],
-    $d['oficial_turno'], $d['suboficial_turno']
-  ]);
-  header('Content-Type: application/json; charset=utf-8');
-  echo json_encode(['ok'=>true], JSON_UNESCAPED_UNICODE);
-  exit;
-}
+$desde = $body['fecha_desde'] ?? null;
+$hasta = $body['fecha_hasta'] ?? null;
+$of    = trim($body['oficial_turno'] ?? '');
+$sub   = trim($body['suboficial_turno'] ?? '');
+if(!$desde || !$hasta){ json_out(['error'=>'Faltan fechas'],400); }
 
-http_response_code(405);
+$st = pdo()->prepare("INSERT INTO parte_encabezado (fecha_desde,fecha_hasta,oficial_turno,suboficial_turno) VALUES (?,?,?,?)");
+$st->execute([$desde,$hasta,$of,$sub]);
+
+json_out(['ok'=>true,'id'=>pdo()->lastInsertId()]);
