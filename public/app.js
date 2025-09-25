@@ -240,36 +240,57 @@ cargarSistemaTabla('tblDC',5);
 cargarSistemaTabla('tblSITM2',6);
 
 // ==========================
-//   IMPORTADOR LTA (DOCX)
+//   IMPORTADOR LTA (DOCX/PDF)
 // ==========================
 qs('btnPrevLTA')?.addEventListener('click', async ()=>{
   const f = qs('docxLta')?.files?.[0];
-  if(!f) return alert('Elegí el DOCX del LTA');
-  const fd = new FormData(); fd.append('docx', f); fd.append('dry','1');
-  if (qs('ltaInfo')) qs('ltaInfo').textContent = 'Procesando DOCX (previsualización)...';
+  if(!f) return alert('Elegí el DOCX o PDF del LTA');
+  const fd = new FormData(); fd.append('file', f); fd.append('dry','1');
+  if (qs('ltaInfo')) qs('ltaInfo').textContent = 'Procesando archivo (previsualización)...';
   try{
     const r = await fetch(API_LTA,{method:'POST', body: fd});
     const data = await r.json();
-    if(!data.ok) throw new Error(data.error||'Error al procesar DOCX');
-    qs('ltaInfo').textContent = `Internados: ${data.internado.length} | Altas: ${data.alta.length} | Fallecidos: ${data.fallecido.length}`;
+    if(!data.ok) throw new Error(data.error||'Error al procesar');
+
+    // Render tabla REDISE
+    renderPreviewLTA(data.redise || []);
+    qs('ltaInfo').textContent =
+      `Filas REDISE: ${(data.redise||[]).length}` + (data._src ? `  [${data._src}]` : '');
     qs('btnImpLTA').disabled = false;
-    qs('ltaPreview').textContent = JSON.stringify(data, null, 2).slice(0,2000)+'...';
   }catch(err){
     qs('ltaInfo').textContent = 'Error: '+ err.message;
+    qs('ltaPreview').innerHTML = '';
   }
 });
 
 qs('btnImpLTA')?.addEventListener('click', async ()=>{
   const f = qs('docxLta')?.files?.[0];
   if(!f) return;
-  const fd = new FormData(); fd.append('docx', f); fd.append('dry','0');
-  qs('ltaInfo').textContent = 'Importando a la base...';
+  const fd = new FormData(); fd.append('file', f); fd.append('dry','0');
+  qs('ltaInfo').textContent = 'Importando...';
   try{
     const r = await fetch(API_LTA,{method:'POST', body: fd});
     const data = await r.json();
-    if(!data.ok) throw new Error(data.error||'Error al importar DOCX');
-    qs('ltaInfo').textContent = `Importado. Internados: ${data.internado} | Altas: ${data.alta} | Fallecidos: ${data.fallecido}`;
+    if(!data.ok) throw new Error(data.error||'Error al importar');
+    qs('ltaInfo').textContent = `Importado ✔  Filas REDISE: ${(data.redise||[]).length}`;
   }catch(err){
     qs('ltaInfo').textContent = 'Error: '+ err.message;
   }
 });
+
+function renderPreviewLTA(rows){
+  const div = qs('ltaPreview'); if(!div) return;
+  if(!rows.length){ div.innerHTML = '<div class="text-muted">SIN NOVEDAD</div>'; return; }
+  const head = `<thead><tr>
+    <th>NODO</th><th>DESDE</th><th>NOVEDADES</th><th>FECHA</th><th>SERVICIO</th><th>N° Ticket</th>
+  </tr></thead>`;
+  const body = rows.map(r=>`<tr>
+    <td>${esc(r.nodo||'')}</td>
+    <td>${esc(r.desde||'')}</td>
+    <td>${esc(r.novedad||'')}</td>
+    <td>${esc(r.fecha||'')}</td>
+    <td>${esc(r.servicio||'')}</td>
+    <td>${esc(r.ticket||'')}</td>
+  </tr>`).join('');
+  div.innerHTML = `<div class="table-responsive"><table class="table table-sm table-bordered">${head}<tbody>${body}</tbody></table></div>`;
+}
