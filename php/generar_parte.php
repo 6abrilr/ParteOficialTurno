@@ -196,6 +196,7 @@ try{
   $pdo = db();
   $pdo->beginTransaction();
 
+  // actualizar si existe para ese rango, si no insertar
   $stChk = $pdo->prepare("SELECT id FROM parte_arma WHERE desde=:d AND hasta=:h");
   $stChk->execute([':d'=>$desde, ':h'=>$hasta]);
   $existe = $stChk->fetchColumn();

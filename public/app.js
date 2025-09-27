@@ -66,14 +66,12 @@ const esc = (s) => String(s ?? '')
   .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
   .replaceAll('"','&quot;').replaceAll("'","&#039;");
 
-// ===== Reglas para habilitar "Generar Parte" =====
+// ===== Habilitación de “Generar Parte” =====
 let encOk = false, ltaOk = false, ceOk = false;
-const tablasGuardadas = new Set(); // catIds que ya se guardaron
-const REQUIERE_TABLAS = [2,3,4,5,6]; // categorías de sistemas
+const tablasGuardadas = new Set();              // categorías guardadas
+const REQUIERE_TABLAS = [2,3,4,5,6];
 
-function allSystemsSaved(){
-  return REQUIERE_TABLAS.every(c => tablasGuardadas.has(c));
-}
+function allSystemsSaved(){ return REQUIERE_TABLAS.every(c => tablasGuardadas.has(c)); }
 function updateGenerateBtn(){
   const btn = qs('btnGenerarParte');
   if (btn) btn.disabled = !(encOk && ltaOk && ceOk && allSystemsSaved());
@@ -96,12 +94,13 @@ function updateGenerateBtn(){
   if (!fDesde.value) fDesde.value = toLocal(hoy0800);
   if (!fHasta.value) fHasta.value = toLocal(maniana0800);
 
+  // sincroniza con campos ocultos/abajo si están vacíos
   if (qs('p_desde') && !qs('p_desde').value) qs('p_desde').value = toLocal(hoy0800);
   if (qs('p_hasta') && !qs('p_hasta').value) qs('p_hasta').value = toLocal(maniana0800);
   if (qs('p_oficial') && !qs('p_oficial').value) qs('p_oficial').value = qs('oficial')?.value || '';
   if (qs('p_subof')   && !qs('p_subof').value)   qs('p_subof').value   = qs('suboficial')?.value || '';
 
-  // reflejo solo si están vacíos los de abajo
+  // reflejo si están vacíos los de abajo
   qs('desde')?.addEventListener('change', () => { if (!qs('p_desde')?.value) qs('p_desde').value = qs('desde').value; });
   qs('hasta')?.addEventListener('change', () => { if (!qs('p_hasta')?.value) qs('p_hasta').value = qs('hasta').value; });
   qs('oficial')?.addEventListener('input',  () => { if (!qs('p_oficial')?.value) qs('p_oficial').value = qs('oficial').value; });
@@ -128,7 +127,7 @@ qs('btnGuardarEnc')?.addEventListener('click', async ()=>{
   }
 });
 
-// ===== Novedades pendientes (solo visual) =====
+// ===== Novedades (solo para el widget lateral) =====
 async function cargarPendientes(){
   if (!qs('tblNovedades')) return;
   try{
@@ -146,9 +145,7 @@ async function cargarPendientes(){
         <td>${esc(n.categoria)}</td>
         <td>${esc(n.unidad ?? '')}</td>
         <td>${esc(n.prioridad)}</td>
-        <td class="text-nowrap">
-          <button class="btn btn-sm btn-outline-success" data-resolver="${n.id}">Resolver</button>
-        </td>`;
+        <td class="text-nowrap"><button class="btn btn-sm btn-outline-success" data-resolver="${n.id}">Resolver</button></td>`;
       tb.appendChild(tr);
     });
     tb.querySelectorAll('[data-resolver]').forEach(b=>{
@@ -162,31 +159,6 @@ async function cargarPendientes(){
   }catch(e){ console.error(e); }
 }
 cargarPendientes();
-
-// ===== CRUD Novedad (form) =====
-qs('btnNuevo')?.addEventListener('click', ()=>{
-  ['id','titulo','descripcion','servicio','ticket','unidad_txt','usuario'].forEach(i=>{ if(qs(i)) qs(i).value=''; });
-  if (qs('categoria_id')) qs('categoria_id').value = 1;
-  if (qs('prioridad'))    qs('prioridad').value    = 'MEDIA';
-});
-qs('frmNovedad')?.addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const pay = {
-    id: qs('id')?.value,
-    titulo: qs('titulo')?.value.trim(),
-    descripcion: qs('descripcion')?.value.trim(),
-    categoria_id: parseInt(qs('categoria_id')?.value ?? '1',10),
-    unidad_id: null,
-    servicio: (qs('servicio')?.value || '').trim(),
-    ticket: (qs('ticket')?.value || '').trim(),
-    prioridad: qs('prioridad')?.value || 'MEDIA',
-    usuario: (qs('usuario')?.value || '').trim()
-  };
-  const accion = pay.id ? 'actualizar' : 'crear';
-  await fetch(`${API_NOV}?action=${accion}`, {method:'POST', body: JSON.stringify(pay)});
-  cargarPendientes();
-  qs('btnNuevo')?.click();
-});
 
 // ============================
 //   ESTADOS DE SISTEMAS (UI)
@@ -212,21 +184,6 @@ async function cargarSistemaTabla(divId, catId){
       <td><input class="form-control form-control-sm tic" value="${esc(x.ticket??'')}" placeholder="GLPI / MM / ..."></td>
     </tr>`).join('');
     div.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle">${head}<tbody>${body}</tbody></table></div>`;
-
-    // Autoguardado por cambio (opcional)
-    div.querySelectorAll('tr[data-id]').forEach(tr=>{
-      const id = +tr.dataset.id;
-      const sel = tr.querySelector('.estado');
-      const nov = tr.querySelector('.nov');
-      const tic = tr.querySelector('.tic');
-      const save = async ()=>{
-        await fetch(`${API_SIST}?action=guardar`,{
-          method:'POST',
-          body: JSON.stringify({id, estado: sel.value, novedad: nov.value.trim(), ticket: tic.value.trim()})
-        });
-      };
-      sel.onchange = save; nov.onchange = save; tic.onchange = save;
-    });
   }catch(e){ console.error(e); }
 }
 cargarSistemaTabla('tblServ',2);
@@ -235,7 +192,7 @@ cargarSistemaTabla('tblSitelpar',4);
 cargarSistemaTabla('tblDC',5);
 cargarSistemaTabla('tblSITM2',6);
 
-// --- Guardar por tabla (botones explícitos) ---
+// Guardar por tabla (botones explícitos)
 async function guardarTabla(divId, catId){
   const div = qs(divId); if(!div) return;
   const rows = Array.from(div.querySelectorAll('tr[data-id]'));
@@ -253,15 +210,48 @@ async function guardarTabla(divId, catId){
   updateGenerateBtn();
   alert('Tabla guardada ✔');
 }
-
-// Botones de guardar por tabla (asegurate de que existan en el HTML)
 qs('btnGuardarServ')    ?.addEventListener('click', ()=> guardarTabla('tblServ',2));
 qs('btnGuardarIsp')     ?.addEventListener('click', ()=> guardarTabla('tblIsp',3));
 qs('btnGuardarSitelpar')?.addEventListener('click', ()=> guardarTabla('tblSitelpar',4));
 qs('btnGuardarDC')      ?.addEventListener('click', ()=> guardarTabla('tblDC',5));
 qs('btnGuardarSITM2')   ?.addEventListener('click', ()=> guardarTabla('tblSITM2',6));
 
-// ===== Helpers (LTA / REDISE) =====
+// ==========================
+//   PREVISUALIZAR LTA+CENOPE
+// ==========================
+qs('docxLta')?.addEventListener('change', ()=>{
+  ltaOk = !!qs('docxLta').files?.length;
+  updateGenerateBtn();
+});
+qs('pdfCenope')?.addEventListener('change', ()=>{
+  ceOk = !!qs('pdfCenope').files?.length;
+  updateGenerateBtn();
+});
+
+// Render previsualización CENOPE (3 tablas compactas)
+window.renderPreviewCenope = function renderPreviewCenope(data){
+  const div = qs('previewTables'); if(!div) return;
+  const mk = (title, rows)=>{
+    if(!rows || !rows.length) return `<h6 class='mt-2'>${esc(title)}</h6><div class='text-muted'>SIN NOVEDAD</div>`;
+    const head = `<thead><tr><th>Nro</th><th>Grado</th><th>Apellido y Nombre</th><th>Arma</th><th>Unidad/Destino</th><th>Fecha</th><th>Habitación</th><th>Hospital</th></tr></thead>`;
+    const body = rows.slice(0,10).map(r=>`<tr>
+      <td>${esc(r.Nro??'')}</td>
+      <td>${esc(r.Grado??'')}</td>
+      <td>${esc(r['Apellido y Nombre']??'')}</td>
+      <td>${esc(r.Arma??'')}</td>
+      <td>${esc(r.Unidad??'')}</td>
+      <td>${esc(r.Fecha??'')}</td>
+      <td>${esc(r['Habitación']??'')}</td>
+      <td>${esc(r.Hospital??'')}</td>
+    </tr>`).join('');
+    return `<h6 class='mt-2'>${esc(title)}</h6><div class='table-responsive'><table class='table table-sm table-bordered'>${head}<tbody>${body}</tbody></table></div>`;
+  };
+  div.innerHTML = mk('INTERNADOS (muestra 10)', data.internado)
+                + mk('ALTAS (muestra 10)', data.alta)
+                + mk('FALLECIDOS (muestra 10)', data.fallecido);
+};
+
+// Render LTA editable (con colores/estados)
 function turnoHoyDDMMMYY(){
   const d = new Date();
   const dd = String(d.getDate()).padStart(2,'0');
@@ -274,8 +264,6 @@ function applyRowEstado(tr, estado){
   if (estado) tr.classList.add('tr-estado-'+estado);
 }
 function valueOrEmpty(el){ return (el?.textContent ?? '').trim(); }
-
-// ===== Snapshots REDISE (para vista previa LTA) =====
 function normNodo(n){ return String(n||'').toUpperCase().replace(/\s+/g,' ').trim(); }
 function normText(s){ return String(s||'').toUpperCase().replace(/\s+/g,' ').trim(); }
 function diffSnapshots(prevRows, currRows){
@@ -287,9 +275,8 @@ function diffSnapshots(prevRows, currRows){
     });
     return map;
   };
-  const A = byKey(prevRows||[]); const B = byKey(currRows||[]);
-  const result = [];
-  B.forEach((curr, key)=>{
+  const A = byKey(prevRows||[]); const B = byKey(currRows||[]); const result=[];
+  B.forEach((curr,key)=>{
     const prev = A.get(key);
     if (!prev) result.push({...curr, estado:'NUEVA'});
     else {
@@ -302,23 +289,10 @@ function diffSnapshots(prevRows, currRows){
     }
   });
   A.forEach(prev=>{
-    result.push({
-      nodo: prev.nodo, desde: prev.desde, novedad: prev.novedad,
-      fecha: turnoHoyDDMMMYY(), servicio: prev.servicio, ticket: prev.ticket, estado:'RESUELTA'
-    });
+    result.push({ nodo:prev.nodo, desde:prev.desde, novedad:prev.novedad,
+      fecha: turnoHoyDDMMMYY(), servicio: prev.servicio, ticket: prev.ticket, estado:'RESUELTA' });
   });
   return result;
-}
-async function guardarSnapshotRedise(rows){
-  const turno = turnoHoyDDMMMYY();
-  const texto = rediseToTextoCCC(rows);
-  const r = await fetch(`${API_REDISE}?action=save`,{
-    method:'POST',
-    body: JSON.stringify({turno, texto_ccc: texto, data: rows})
-  });
-  const j = await r.json();
-  if (!j.ok) throw new Error(j.error||'No se pudo guardar snapshot');
-  return j;
 }
 async function cargarUltimoSnapshot(){
   const r = await fetch(`${API_REDISE}?action=last`);
@@ -326,40 +300,18 @@ async function cargarUltimoSnapshot(){
   if (!j.ok) throw new Error(j.error||'No se pudo leer snapshot');
   return j.found ? j.snapshot : null;
 }
-
-// ===== LTA – Render editable + comparación =====
-function renderPreviewLTA(rows){
-  const div = qs('ltaPreview'); if(!div) return;
-  if(!rows || !rows.length){ div.innerHTML = '<div class="text-muted">SIN NOVEDAD</div>'; return; }
-  const hoy = turnoHoyDDMMMYY();
-  (async ()=>{
-    try{
-      const snap = await cargarUltimoSnapshot();
-      const prev = snap ? (snap.data_json || []) : [];
-      const curr = rows.map(r => ({...r, fecha: hoy}));
-      const merged = diffSnapshots(prev, curr);
-      renderLtaTabla(merged, hoy);
-    }catch(err){
-      console.error('No se pudo comparar con snapshot previo:', err);
-      const curr = rows.map(r => ({...r, fecha: hoy, estado: r.estado || 'ACTUALIZADA'}));
-      renderLtaTabla(curr, hoy);
-    }
-  })();
-}
 function renderLtaTabla(rows, hoy){
   const div = qs('ltaPreview'); if(!div) return;
   const head = `
-    <thead>
-      <tr>
-        <th style="min-width:180px">NODO</th>
-        <th style="width:90px">DESDE</th>
-        <th>NOVEDADES <span class="estado-badge">Hacé clic y editá el texto</span></th>
-        <th style="width:90px">FECHA</th>
-        <th style="width:90px">SERVICIO</th>
-        <th style="width:110px">N° Ticket</th>
-        <th style="width:140px">Estado</th>
-      </tr>
-    </thead>`;
+    <thead><tr>
+      <th style="min-width:180px">NODO</th>
+      <th style="width:90px">DESDE</th>
+      <th>NOVEDADES <span class="estado-badge">Hacé clic y editá el texto</span></th>
+      <th style="width:90px">FECHA</th>
+      <th style="width:90px">SERVICIO</th>
+      <th style="width:110px">N° Ticket</th>
+      <th style="width:140px">Estado</th>
+    </tr></thead>`;
   const body = rows.map((r, idx)=>`
     <tr data-row="${idx}" class="tr-estado-${r.estado||'ACTUALIZADA'}">
       <td contenteditable="true" class="ce-nodo">${esc(r.nodo||'')}</td>
@@ -376,155 +328,61 @@ function renderLtaTabla(rows, hoy){
         </select>
       </td>
     </tr>`).join('');
-  div.innerHTML = `
-    <div class="table-responsive">
-      <table class="table table-sm table-bordered align-middle" id="tblLTA">
-        ${head}
-        <tbody>${body}</tbody>
-      </table>
-    </div>
-    <div class="mt-2 d-flex flex-wrap gap-2">
-      <button id="btnCopiarLTA"  class="btn btn-outline-secondary btn-sm">Copiar JSON</button>
-      <button id="btnDescargarLTA" class="btn btn-outline-secondary btn-sm">Descargar CSV</button>
-      <button id="btnCopiarTXT" class="btn btn-outline-primary btn-sm">Copiar texto (CCC)</button>
-      <button id="btnGuardarLTA" class="btn btn-success btn-sm">Guardar REDISE (turno)</button>
-    </div>
-    <div class="small text-muted mt-1" id="ltaDiffInfo"></div>`;
+  div.innerHTML = `<div class="table-responsive"><table class="table table-sm table-bordered align-middle" id="tblLTA">${head}<tbody>${body}</tbody></table></div>`;
   div.querySelectorAll('.sel-estado').forEach(sel=>{
-    sel.onchange = () => {
-      const tr = sel.closest('tr');
-      applyRowEstado(tr, sel.value);
-    };
+    sel.onchange = () => { const tr = sel.closest('tr'); applyRowEstado(tr, sel.value); };
   });
-  const info = qs('ltaDiffInfo');
-  if (info) {
-    const cnt = rows.reduce((a,r)=>{ a[r.estado||'ACTUALIZADA']=(a[r.estado||'ACTUALIZADA']||0)+1; return a; },{});
-    info.textContent = `NUEVAS: ${cnt['NUEVA']||0} | ACTUALIZADAS: ${cnt['ACTUALIZADA']||0} | RESUELTAS: ${cnt['RESUELTA']||0}`;
-  }
-  qs('btnCopiarLTA')?.addEventListener('click', ()=>{
-    const data = ltaLeerTablaActual();
-    navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-    alert('Copiado al portapapeles ✔');
-  });
-  qs('btnDescargarLTA')?.addEventListener('click', ()=>{
-    const data = ltaLeerTablaActual();
-    const csv = toCSV(data);
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-    a.download = 'redise_lta.csv';
-    a.click();
-  });
-  qs('btnCopiarTXT')?.addEventListener('click', ()=>{
-    const data = ltaLeerTablaActual();
-    const txt  = rediseToTextoCCC(data);
-    navigator.clipboard.writeText(txt);
-    alert('Texto (CCC) copiado ✔');
-  });
-  qs('btnGuardarLTA')?.addEventListener('click', async ()=>{
+}
+
+// Botón combinado de previsualización (ambos archivos)
+qs('btnPrevisualizar')?.addEventListener('click', async ()=>{
+  const fLTA = qs('docxLta')?.files?.[0];
+  const fCE  = qs('pdfCenope')?.files?.[0];
+  if (!fLTA || !fCE) { alert('Elegí los 2 archivos: LTA y CENOPE'); return; }
+
+  qs('parteInfo').textContent = 'Procesando archivos...';
+  try{
+    const fdL = new FormData(); fdL.append('file', fLTA); fdL.append('dry','1');
+    const fdC = new FormData(); fdC.append('pdf',  fCE ); fdC.append('dry','1');
+    const [rL, rC] = await Promise.all([
+      fetch(API_LTA,    {method:'POST', body: fdL}),
+      fetch(API_CENOPE, {method:'POST', body: fdC})
+    ]);
+    const jL = await rL.json();
+    const jC = await rC.json();
+    if (!jL.ok) throw new Error(jL.error||'Error LTA');
+    if (!jC.ok) throw new Error(jC.error||'Error CENOPE');
+
+    // LTA: render editable + comparación con snapshot previo
+    const hoy = turnoHoyDDMMMYY();
     try{
-      const data = ltaLeerTablaActual();
-      await guardarSnapshotRedise(data);
-      alert('REDISE guardado para el turno ' + turnoHoyDDMMMYY() + ' ✔');
-    }catch(err){ alert('No se pudo guardar: ' + err.message); }
-  });
-}
-function ltaLeerTablaActual(){
-  const tbl = qs('tblLTA'); if(!tbl) return [];
-  return Array.from(tbl.querySelectorAll('tbody tr')).map(tr=>({
-    nodo:     valueOrEmpty(tr.querySelector('.ce-nodo')),
-    desde:    valueOrEmpty(tr.querySelector('.ce-desde')),
-    novedad:  valueOrEmpty(tr.querySelector('.ce-nov')),
-    fecha:    valueOrEmpty(tr.querySelector('.ce-fecha')),
-    servicio: valueOrEmpty(tr.querySelector('.ce-serv')),
-    ticket:   valueOrEmpty(tr.querySelector('.ce-tic')),
-    estado:   tr.querySelector('.sel-estado')?.value || 'ACTUALIZADA'
-  }));
-}
-function toCSV(rows){
-  const cols = ['nodo','desde','novedad','fecha','servicio','ticket','estado'];
-  const escCSV = (s)=> {
-    s = String(s ?? '');
-    return /[",\n]/.test(s) ? `"${s.replaceAll('"','""')}"` : s;
-  };
-  const head = cols.join(','); const body = rows.map(r => cols.map(c => escCSV(r[c])).join(',')).join('\n');
-  return head + '\n' + body;
-}
+      const snap = await cargarUltimoSnapshot();
+      const prev = snap ? (snap.data_json || []) : [];
+      const curr = (jL.redise||[]).map(r => ({...r, fecha: hoy}));
+      const merged = diffSnapshots(prev, curr);
+      renderLtaTabla(merged, hoy);
+    }catch(err){
+      renderLtaTabla((jL.redise||[]).map(r=>({...r, fecha:hoy, estado:r.estado||'ACTUALIZADA'})), hoy);
+    }
 
-// ==========================
-//   IMPORTADORES
-// ==========================
-qs('docxLta')?.addEventListener('change', ()=>{
-  ltaOk = !!qs('docxLta').files?.length;
-  if (qs('p_lta')) qs('p_lta').files = qs('docxLta').files;
-  updateGenerateBtn();
-});
-qs('pdfCenope')?.addEventListener('change', ()=>{
-  ceOk = !!qs('pdfCenope').files?.length;
-  if (qs('p_cenope')) qs('p_cenope').files = qs('pdfCenope').files;
-  updateGenerateBtn();
-});
-qs('btnPrevLTA')?.addEventListener('click', async ()=>{
-  const f = qs('docxLta')?.files?.[0];
-  if(!f) return alert('Elegí el DOCX o PDF del LTA');
-  const fd = new FormData(); fd.append('file', f); fd.append('dry','1');
-  if (qs('ltaInfo')) qs('ltaInfo').textContent = 'Procesando archivo (previsualización)...';
-  try{
-    const r = await fetch(API_LTA,{method:'POST', body: fd});
-    const data = await r.json();
-    if(!data.ok) throw new Error(data.error||'Error al procesar');
-    renderPreviewLTA(data.redise || []);
-    qs('ltaInfo').textContent = `Filas REDISE: ${(data.redise||[]).length}` + (data._src ? `  [${data._src}]` : '');
+    // CENOPE: 3 tablas compactas
+    renderPreviewCenope(jC);
+
+    qs('parteInfo').textContent = 'Previsualización lista ✔';
   }catch(err){
-    qs('ltaInfo').textContent = 'Error: '+ err.message;
-    qs('ltaPreview').innerHTML = '';
+    qs('parteInfo').textContent = 'Error: ' + err.message;
   }
 });
-qs('btnImpLTA')?.addEventListener('click', async ()=>{
-  const f = qs('docxLta')?.files?.[0]; if(!f) return;
-  const fd = new FormData(); fd.append('file', f); fd.append('dry','0');
-  qs('ltaInfo').textContent = 'Importando...';
-  try{
-    const r = await fetch(API_LTA,{method:'POST', body: fd});
-    const data = await r.json();
-    if(!data.ok) throw new Error(data.error||'Error al importar');
-    qs('ltaInfo').textContent = `Importado ✔  Filas REDISE: ${(data.redise||[]).length}`;
-  }catch(err){ qs('ltaInfo').textContent = 'Error: '+ err.message; }
-});
 
-qs('btnPrevCenope')?.addEventListener('click', async ()=>{
-  const f = qs('pdfCenope')?.files?.[0];
-  if(!f) return alert('Elegí el PDF del CENOPE');
-  const fd = new FormData(); fd.append('pdf', f); fd.append('dry','1');
-  if (qs('cenopeInfo')) qs('cenopeInfo').textContent = 'Procesando PDF (previsualización)...';
-  try{
-    const r = await fetch(API_CENOPE,{method:'POST', body: fd});
-    const data = await r.json();
-    if(!data.ok) throw new Error(data.error||'Error al procesar');
-    if (qs('cenopeInfo')) qs('cenopeInfo').textContent =
-      `Internados: ${data.internado.length} | Altas: ${data.alta.length} | Fallecidos: ${data.fallecido.length}`;
-    renderPreviewCenope(data);
-  }catch(err){ if (qs('cenopeInfo')) qs('cenopeInfo').textContent = 'Error: '+ err.message; }
-});
-qs('btnImpCenope')?.addEventListener('click', async ()=>{
-  const f = qs('pdfCenope')?.files?.[0]; if(!f) return;
-  const fd = new FormData(); fd.append('pdf', f); fd.append('dry','0');
-  if (qs('cenopeInfo')) qs('cenopeInfo').textContent = 'Importando a la base...';
-  try{
-    const r = await fetch(API_CENOPE,{method:'POST', body: fd});
-    const data = await r.json();
-    if(!data.ok) throw new Error(data.error||'Error al importar');
-    if (qs('cenopeInfo')) qs('cenopeInfo').textContent =
-      `Importado. Internados: ${data.internado} | Altas: ${data.alta} | Fallecidos: ${data.fallecido}`;
-  }catch(err){ if (qs('cenopeInfo')) qs('cenopeInfo').textContent = 'Error: '+ err.message; }
-});
-
-// ===== Generar Parte (solo al final) =====
+// ==========================
+//   GENERAR PARTE (final)
+// ==========================
 qs('btnGenerarParte')?.addEventListener('click', async ()=>{
-  const fd = new FormData();
-  const lta = qs('p_lta')?.files?.[0];
-  const ce  = qs('p_cenope')?.files?.[0];
+  const lta = qs('docxLta')?.files?.[0];
+  const ce  = qs('pdfCenope')?.files?.[0];
   if(!lta || !ce) return alert('Subí LTA y CENOPE');
 
+  const fd = new FormData();
   fd.append('lta', lta);
   fd.append('cenope', ce);
   fd.append('desde', qs('p_desde')?.value || qs('desde')?.value || '');
@@ -542,15 +400,12 @@ qs('btnGenerarParte')?.addEventListener('click', async ()=>{
 
     const aH = qs('lnkParteHTML'), aP = qs('lnkPartePDF');
     if (aH) { aH.href = data.html; aH.classList.remove('d-none'); }
-    if (aP) {
-      if (data.pdf) { aP.href = data.pdf; aP.classList.remove('d-none'); }
-      else { aP.classList.add('d-none'); }
-    }
+    if (aP) { if (data.pdf) { aP.href = data.pdf; aP.classList.remove('d-none'); } else { aP.classList.add('d-none'); } }
     qs('parteInfo').textContent = `Parte generado ✔ – Turno ${data.turno}`;
   }catch(err){
     qs('parteInfo').textContent = 'Error: ' + err.message;
   }
 });
 
-// Inicializar estado del botón final
+// Estado inicial
 updateGenerateBtn();
