@@ -1,4 +1,5 @@
 <?php
+// php/generar_parte.php
 declare(strict_types=1);
 ini_set('display_errors','0');
 header('Content-Type: application/json; charset=utf-8');
@@ -10,20 +11,27 @@ function out($arr, int $code=200){
   echo json_encode($arr, JSON_UNESCAPED_UNICODE);
   exit;
 }
+
+/* ---------- Helpers ---------- */
+
 function h($v): string { return htmlspecialchars((string)($v ?? ''), ENT_QUOTES, 'UTF-8'); }
+
 function disable_proxy_env(): void {
   foreach (['http_proxy','https_proxy','all_proxy','HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','no_proxy'] as $v) {
     if (getenv($v) !== false) { putenv("$v="); }
   }
 }
+
 function php_base_url(): string {
   $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') == 443);
   $proto = $https ? 'https://' : 'http://';
   $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
-  $dir   = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/php'), '/\\');
+  $dir   = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/php'), '/\\'); // ej: /php
   return $proto.$host.$dir;
 }
+
 function site_root(): string { return realpath(__DIR__ . '/..') ?: dirname(__DIR__); }
+
 function ensure_dir(string $path): void { if (!is_dir($path)) @mkdir($path, 0775, true); }
 
 function curl_import_local(string $url, string $fileField, string $tmpPath, string $filename, array $extraForm){
@@ -32,35 +40,54 @@ function curl_import_local(string $url, string $fileField, string $tmpPath, stri
   $cfile = new CURLFile($tmpPath, mime_content_type($tmpPath) ?: 'application/octet-stream', $filename);
   $post = array_merge([$fileField => $cfile], $extraForm);
   curl_setopt_array($ch, [
-    CURLOPT_URL=>$url, CURLOPT_POST=>true, CURLOPT_POSTFIELDS=>$post,
-    CURLOPT_RETURNTRANSFER=>true, CURLOPT_CONNECTTIMEOUT=>5, CURLOPT_TIMEOUT=>45,
-    CURLOPT_PROXY=>'', CURLOPT_NOPROXY=>'*',
+    CURLOPT_URL            => $url,
+    CURLOPT_POST           => true,
+    CURLOPT_POSTFIELDS     => $post,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_CONNECTTIMEOUT => 5,
+    CURLOPT_TIMEOUT        => 45,
+    CURLOPT_PROXY          => '',
+    CURLOPT_NOPROXY        => '*',
   ]);
-  $resp = curl_exec($ch); $err  = curl_error($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+  $resp = curl_exec($ch);
+  $err  = curl_error($ch);
+  $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  curl_close($ch);
+
   if ($resp === false) throw new Exception("cURL error: $err");
-  if ($code >= 400) throw new Exception("Importador devolvió HTTP $code: $resp");
+  if ($code >= 400)     throw new Exception("Importador devolvió HTTP $code: $resp");
+
   $json = json_decode($resp, true);
-  if (!is_array($json)) throw new Exception("Respuesta no JSON del importador: $resp");
-  if (isset($json['ok']) && $json['ok']===false) throw new Exception($json['error'] ?? 'Error importador');
+  if (!is_array($json))                           throw new Exception("Respuesta no JSON del importador: $resp");
+  if (isset($json['ok']) && $json['ok']===false)  throw new Exception($json['error'] ?? 'Error importador');
   return $json;
 }
-function month_es(int $m): string {
-  static $MES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  return $MES[$m-1] ?? '';
+
+function mes_es(int $m, bool $lower=true): string {
+  $n = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][$m-1];
+  return $lower ? $n : mb_convert_case($n, MB_CASE_TITLE, 'UTF-8');
 }
-function rango_nombre_pdf(string $desde, string $hasta): string {
-  $d1 = new DateTime($desde); $d2 = new DateTime($hasta);
-  $dia1 = (int)$d1->format('j'); $mes1 = month_es((int)$d1->format('n')); $anio1 = $d1->format('Y');
-  $dia2 = (int)$d2->format('j'); $mes2 = month_es((int)$d2->format('n')); $anio2 = $d2->format('Y');
-  if ($mes1 === $mes2 && $anio1 === $anio2) return "Parte de Novedades del Arma de Comunicaciones del $dia1 al $dia2 de $mes1 de $anio1";
-  return "Parte de Novedades del Arma de Comunicaciones del $dia1 de $mes1 de $anio1 al $dia2 de $mes2 de $anio2";
+function rango_titulo(string $desde, string $hasta): string {
+  $d = strtotime($desde); $h = strtotime($hasta);
+  if (!$d || !$h) return '';
+  $diaD = (int)date('j',$d);  $diaH = (int)date('j',$h);
+  $mesD = (int)date('n',$d);  $mesH = (int)date('n',$h);
+  $anio = date('Y',$h);
+  if ($mesD==$mesH) {
+    return "del día $diaD al $diaH de ".mes_es($mesH)." de $anio";
+  }
+  return "del día $diaD de ".mes_es($mesD)." al $diaH de ".mes_es($mesH)." de $anio";
 }
-function to_filename(string $s): string {
+function slugify($s){
+  $s = preg_replace('~[^\pL\d]+~u', '-', $s);
+  $s = trim($s, '-');
   $s = iconv('UTF-8','ASCII//TRANSLIT//IGNORE',$s);
-  $s = preg_replace('/[^A-Za-z0-9._ -]+/','',$s);
-  $s = preg_replace('/\s+/','_',$s);
-  return trim($s,'_');
+  $s = preg_replace('~[^-\w]+~', '', $s);
+  $s = preg_replace('~-+~', '-', $s);
+  return strtolower($s ?: 'parte');
 }
+
+/* ---------- Main ---------- */
 
 try{
   if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') out(['ok'=>false,'error'=>'POST requerido'],405);
@@ -74,6 +101,7 @@ try{
   if (empty($_FILES['lta']['tmp_name'])    || !is_uploaded_file($_FILES['lta']['tmp_name']))    out(['ok'=>false,'error'=>'Falta archivo LTA (DOCX o PDF)'],400);
   if (empty($_FILES['cenope']['tmp_name']) || !is_uploaded_file($_FILES['cenope']['tmp_name'])) out(['ok'=>false,'error'=>'Falta archivo CENOPE (PDF)'],400);
 
+  // 1) Importar usando endpoints locales (dry=1)
   $phpBase = php_base_url();
   $jLta = curl_import_local($phpBase.'/import_lta_docx.php', 'file',  $_FILES['lta']['tmp_name'],    $_FILES['lta']['name'],    ['dry'=>'1']);
   $jCe  = curl_import_local($phpBase.'/import_cenope.php',   'pdf',   $_FILES['cenope']['tmp_name'], $_FILES['cenope']['name'], ['dry'=>'1']);
@@ -83,23 +111,38 @@ try{
   $alta      = $jCe['alta']       ?? [];
   $fallecido = $jCe['fallecido']  ?? [];
 
+  // 2) Turno y CCC
   $MES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
   $turno = sprintf('%02d%s%02d', (int)date('d'), $MES[(int)date('n')-1], (int)date('y'));
-  $redise = array_map(function($r) use($turno){ $r['fecha']=$turno; $r['estado']=$r['estado']??'ACTUALIZADA'; return $r; }, $redise);
+
+  $redise = array_map(function($r) use($turno){
+    $r['fecha']  = $turno;
+    $r['estado'] = $r['estado'] ?? 'ACTUALIZADA';
+    return $r;
+  }, $redise);
 
   $textoCCCParts = [];
   foreach ($redise as $r){
-    $nodo = strtoupper(trim($r['nodo'] ?? '')); if (!$nodo) continue;
-    if (strpos($nodo,'CCIG')===0){ $parts = preg_split('/\s+/', $nodo); $head  = array_shift($parts); $nodo  = $head."\n".implode("\n", $parts); }
+    $nodo = strtoupper(trim($r['nodo'] ?? ''));
+    if (!$nodo) continue;
+    if (strpos($nodo,'CCIG')===0){
+      $parts = preg_split('/\s+/', $nodo);
+      $head  = array_shift($parts);
+      $nodo  = $head."\n".implode("\n", $parts);
+    }
     $desdeNodo = strtoupper(trim($r['desde'] ?? ''));
-    $nov       = trim(preg_replace('/\s{2,}/',' ', (string)($r['novedad'] ?? ''))); if (!$nov) continue;
-    $svc = strtoupper(trim($r['servicio'] ?? '')); if ($svc==='VHF/HF') $svc = 'HF/VHF';
+    $nov       = trim(preg_replace('/\s{2,}/',' ', (string)($r['novedad'] ?? '')));
+    if (!$nov) continue;
+    $svc = strtoupper(trim($r['servicio'] ?? ''));
+    if ($svc==='VHF/HF') $svc = 'HF/VHF';
     $tic = trim((string)($r['ticket'] ?? ''));
     $tail = ($svc ? ' '.$svc : ' ---') . ($tic ? ' '.$tic : ' ---');
-    $textoCCCParts[] = implode("\n", array_values(array_filter([$nodo, $desdeNodo ?: null, $nov, $turno.$tail])));
+    $bloque = implode("\n", array_values(array_filter([$nodo, $desdeNodo ?: null, $nov, $turno.$tail])));
+    $textoCCCParts[] = $bloque;
   }
   $textoCCC = implode("\n", $textoCCCParts);
 
+  // 3) HTML
   ob_start(); ?>
   <!doctype html><html lang="es"><head>
     <meta charset="utf-8"><title>Parte del Arma – <?=h($turno)?></title>
@@ -167,68 +210,67 @@ try{
   <?php
   $html = ob_get_clean();
 
+  // 4) Guardar HTML y PDF
   $root = site_root();
   $dir  = $root . '/files/partes';
   ensure_dir($dir);
 
-  $niceTitle = rango_nombre_pdf($desde, $hasta);
-  $baseName  = to_filename($niceTitle) . '_' . date('Ymd_His');
+  $rango = rango_titulo($desde, $hasta);
+  $nice  = "Parte de novedades del Arma de Comunicaciones $rango";
+  $slug  = slugify($nice).'_'.date('Ymd_His');
 
-  $htmlFile = $dir . "/{$baseName}.html";
-  $pdfFile  = $dir . "/{$baseName}.pdf";
+  $htmlFile = $dir."/{$slug}.html";
+  $pdfFile  = $dir."/{$slug}.pdf";
   file_put_contents($htmlFile, $html);
 
-  $pdfPathFs  = null;
+  $pdfUrlFs  = null;
   $tcpdfOk = false;
   @include_once __DIR__.'/../vendor/autoload.php';
   if (class_exists('TCPDF')) $tcpdfOk = true;
   if (!$tcpdfOk && file_exists(__DIR__.'/tcpdf_min/tcpdf.php')) { @include_once __DIR__.'/tcpdf_min/tcpdf.php'; $tcpdfOk = class_exists('TCPDF'); }
+
   if ($tcpdfOk) {
     $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
     $pdf->setPrintHeader(false); $pdf->setPrintFooter(false);
-    $pdf->SetCreator('ParteOficialTurno'); $pdf->SetAuthor($oficial); $pdf->SetTitle($niceTitle);
+    $pdf->SetCreator('ParteOficialTurno'); $pdf->SetAuthor($oficial); $pdf->SetTitle($nice);
     $pdf->AddPage();
     $pdf->writeHTML($html, true, false, true, false, '');
     $pdf->Output($pdfFile, 'F');
-    $pdfPathFs = $pdfFile;
+    $pdfUrlFs = $pdfFile;
   }
 
+  // 5) Persistir en DB
   $pdo = db();
-  $pdo->beginTransaction();
+  $st = $pdo->prepare("INSERT INTO parte_arma (desde,hasta,oficial,suboficial,turno,html_path,pdf_path)
+                       VALUES (:d,:h,:o,:s,:t,:hp,:pp)");
+  $st->execute([
+    ':d'=>$desde, ':h'=>$hasta, ':o'=>$oficial, ':s'=>$suboficial, ':t'=>$turno,
+    ':hp'=>$htmlFile, ':pp'=>$pdfUrlFs ?? ''
+  ]);
+  $parteId = (int)$pdo->lastInsertId();
 
-  // actualizar si existe para ese rango, si no insertar
-  $stChk = $pdo->prepare("SELECT id FROM parte_arma WHERE desde=:d AND hasta=:h");
-  $stChk->execute([':d'=>$desde, ':h'=>$hasta]);
-  $existe = $stChk->fetchColumn();
+  $st2 = $pdo->prepare("INSERT INTO parte_arma_data (parte_id,cenope_json,redise_json,texto_ccc)
+                        VALUES (:id,:c,:r,:x)");
+  $st2->execute([
+    ':id'=>$parteId,
+    ':c'=>json_encode($jCe, JSON_UNESCAPED_UNICODE),
+    ':r'=>json_encode($redise, JSON_UNESCAPED_UNICODE),
+    ':x'=>$textoCCC
+  ]);
 
-  if ($existe) {
-    $parteId = (int)$existe;
-    $pdo->prepare("UPDATE parte_arma SET oficial=:o, suboficial=:s, turno=:t, html_path=:hp, pdf_path=:pp WHERE id=:id")
-        ->execute([':o'=>$oficial, ':s'=>$suboficial, ':t'=>$turno, ':hp'=>$htmlFile, ':pp'=>$pdfPathFs ?? '', ':id'=>$parteId]);
-    $pdo->prepare("DELETE FROM parte_arma_data WHERE parte_id=:id")->execute([':id'=>$parteId]);
-    $pdo->prepare("INSERT INTO parte_arma_data (parte_id,cenope_json,redise_json,texto_ccc) VALUES (:id,:c,:r,:x)")
-        ->execute([':id'=>$parteId, ':c'=>json_encode($jCe, JSON_UNESCAPED_UNICODE), ':r'=>json_encode($redise, JSON_UNESCAPED_UNICODE), ':x'=>$textoCCC]);
-  } else {
-    $pdo->prepare("INSERT INTO parte_arma (desde,hasta,oficial,suboficial,turno,html_path,pdf_path) VALUES (:d,:h,:o,:s,:t,:hp,:pp)")
-        ->execute([':d'=>$desde, ':h'=>$hasta, ':o'=>$oficial, ':s'=>$suboficial, ':t'=>$turno, ':hp'=>$htmlFile, ':pp'=>$pdfPathFs ?? '']);
-    $parteId = (int)$pdo->lastInsertId();
-    $pdo->prepare("INSERT INTO parte_arma_data (parte_id,cenope_json,redise_json,texto_ccc) VALUES (:id,:c,:r,:x)")
-        ->execute([':id'=>$parteId, ':c'=>json_encode($jCe, JSON_UNESCAPED_UNICODE), ':r'=>json_encode($redise, JSON_UNESCAPED_UNICODE), ':x'=>$textoCCC]);
-  }
-  $pdo->commit();
-
+  // URLs públicas
   $basePublic = rtrim((function(){
     $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') == 443);
     $proto = $https ? 'https://' : 'http://';
     $host  = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    $rootWeb = rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/php')), '/\\');
+    $rootWeb = rtrim(dirname(dirname($_SERVER['SCRIPT_NAME'] ?? '/php')), '/\\'); // /public → raíz
     return $proto.$host.$rootWeb;
   })(), '/');
 
   $htmlUrl = $basePublic.'/files/partes/'.basename($htmlFile);
-  $pdfUrl  = $pdfPathFs ? $basePublic.'/files/partes/'.basename($pdfFile) : null;
+  $pdfUrl  = $pdfUrlFs ? $basePublic.'/files/partes/'.basename($pdfFile) : null;
 
-  out(['ok'=>true,'id'=>$parteId,'turno'=>$turno,'html'=>$htmlUrl,'pdf'=>$pdfUrl,'title'=>$niceTitle]);
+  out(['ok'=>true,'id'=>$parteId,'turno'=>$turno,'html'=>$htmlUrl,'pdf'=>$pdfUrl]);
 
 }catch(Throwable $e){
   out(['ok'=>false,'error'=>$e->getMessage()],500);
