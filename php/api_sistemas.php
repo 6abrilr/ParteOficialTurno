@@ -1,38 +1,58 @@
 <?php
 // php/api_sistemas.php
-require_once __DIR__.'/db.php';
-
-$action = $_GET['action'] ?? '';
-
+declare(strict_types=1);
+ini_set('display_errors','0');
 header('Content-Type: application/json; charset=utf-8');
 
+require_once __DIR__.'/db.php';
+function out($arr, int $code=200){ http_response_code($code); echo json_encode($arr, JSON_UNESCAPED_UNICODE); exit; }
+
 try {
-  switch ($action) {
-    case 'listar':
-      // ?cat=2|3|4|5|6  (si no viene, trae todos)
-      $cat = isset($_GET['cat']) ? (int)$_GET['cat'] : 0;
-      $sql = "SELECT * FROM sistema_estado";
-      $params = [];
-      if ($cat) { $sql .= " WHERE categoria_id=?"; $params[] = $cat; }
-      $sql .= " ORDER BY categoria_id, nombre";
-      $st = pdo()->prepare($sql); $st->execute($params);
-      echo json_encode($st->fetchAll(), JSON_UNESCAPED_UNICODE);
-      break;
+  $pdo = db();
+  $action = $_GET['action'] ?? '';
 
-    case 'guardar':
-      $d = json_decode(file_get_contents('php://input'), true);
-      if (!$d || !isset($d['id'])) throw new Exception('Datos inválidos');
-      $sql = "UPDATE sistema_estado SET estado=?, novedad=?, ticket=?, actualizado_en=NOW() WHERE id=?";
-      pdo()->prepare($sql)->execute([
-        $d['estado'], ($d['novedad'] ?? null), ($d['ticket'] ?? null), $d['id']
-      ]);
-      echo json_encode(['ok'=>true], JSON_UNESCAPED_UNICODE);
-      break;
+  if ($action === 'listar') {
+    $cat = (int)($_GET['cat'] ?? 0);
+    if ($cat <= 0) out([]); // evita 500 si falta cat
 
-    default:
-      echo json_encode(['error'=>'acción inválida'], JSON_UNESCAPED_UNICODE);
+    $st = $pdo->prepare(
+      "SELECT id, nombre, estado, novedad, ticket
+         FROM sistema_estado
+        WHERE categoria_id = :c
+        ORDER BY nombre"
+    );
+    $st->execute([':c'=>$cat]);
+    $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    out(array_map(function($r){
+      return [
+        'id'      => (int)$r['id'],
+        'nombre'  => $r['nombre'],
+        'estado'  => $r['estado'] ?: 'EN LINEA',
+        'novedad' => $r['novedad'] ?: '',
+        'ticket'  => $r['ticket'] ?: '',
+      ];
+    }, $rows));
   }
+
+  if ($action === 'guardar') {
+    $raw = file_get_contents('php://input') ?: '{}';
+    $p = json_decode($raw, true) ?: [];
+    $st = $pdo->prepare(
+      "UPDATE sistema_estado
+          SET estado=:e, novedad=:n, ticket=:t
+        WHERE id=:id"
+    );
+    $st->execute([
+      ':e'  => $p['estado'] ?? 'EN LINEA',
+      ':n'  => $p['novedad'] ?? '',
+      ':t'  => $p['ticket'] ?? '',
+      ':id' => (int)($p['id'] ?? 0),
+    ]);
+    out(['ok'=>true]);
+  }
+
+  out(['ok'=>false,'error'=>'Acción no válida'],400);
+
 } catch (Throwable $e) {
-  http_response_code(500);
-  echo json_encode(['error'=>$e->getMessage()], JSON_UNESCAPED_UNICODE);
+  out(['ok'=>false,'error'=>$e->getMessage()],500);
 }

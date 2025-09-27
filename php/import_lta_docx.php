@@ -6,6 +6,9 @@
  *  - Formato tabular (PDF/Word): columnas NODO/DESDE/NOVEDADES/FECHA/SERVICIO/TICKET
  * Devuelve: { ok:true, _src:"extractor", redise:[{nodo,desde,novedad,fecha,servicio,ticket}] }
  */
+ini_set('display_errors','0');
+header('Content-Type: application/json; charset=utf-8');
+
 require_once __DIR__.'/db.php';
 
 $autoload = dirname(__DIR__).'/vendor/autoload.php';
@@ -14,8 +17,6 @@ if (is_file($autoload)) require_once $autoload;
 use PhpOffice\PhpWord\IOFactory;
 
 $PDFTOTEXT = 'C:\\Release-25.07.0-0\\Library\\bin\\pdftotext.exe';
-
-header('Content-Type: application/json; charset=utf-8');
 
 try {
   if (!isset($_FILES['file'])) throw new Exception('No se recibió archivo (usa clave "file").');
@@ -57,7 +58,7 @@ try {
     $r['nodo']     = trim($r['nodo'] ?? '');
     $r['desde']    = trim($r['desde'] ?? '');
     $r['novedad']  = resumen_ccc(trim($r['novedad'] ?? ''));
-    $r['fecha']    = trim($r['fecha'] ?? '');     // en UI la sobreescribimos con FECHA TURNO
+    $r['fecha']    = trim($r['fecha'] ?? '');     // en UI se pisa con FECHA TURNO
     $r['servicio'] = trim($r['servicio'] ?? '');
     $r['ticket']   = trim($r['ticket'] ?? '');
     return $r['nodo'] && $r['novedad'] ? $r : null;
@@ -214,7 +215,7 @@ function parse_redise_tabular(string $txt): array {
     if (preg_match('/^(CCIG\\s+[A-ZÁÉÍÓÚÑ ]{3,}|CA\\s*COM|CIA\\s*COM|BCOM|BRIG\\s*COM|CCIE)\\b/u', $r, $mn)) $nodo = trim($mn[0]);
 
     // Fechas / servicio / ticket
-    $desde = detect_desde($r, true); // última fecha corta del bloque (suele coincidir con DESDE real)
+    $desde = detect_desde($r, true); // última fecha corta del bloque
     $fecha = detect_fecha($r);
     $serv  = detect_servicio($r);
     $tic   = detect_ticket($r);

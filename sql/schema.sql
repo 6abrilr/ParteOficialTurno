@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Servidor: 127.0.0.1
--- Tiempo de generación: 24-09-2025 a las 16:30:44
+-- Tiempo de generación: 27-09-2025 a las 16:08:10
 -- Versión del servidor: 10.4.32-MariaDB
 -- Versión de PHP: 8.2.12
 
@@ -79,6 +79,38 @@ CREATE TABLE `novedad_evento` (
   `detalle` text DEFAULT NULL,
   `creado_en` datetime NOT NULL DEFAULT current_timestamp(),
   `usuario` varchar(80) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `parte_arma`
+--
+
+CREATE TABLE `parte_arma` (
+  `id` int(11) NOT NULL,
+  `desde` datetime NOT NULL,
+  `hasta` datetime NOT NULL,
+  `oficial` varchar(120) NOT NULL,
+  `suboficial` varchar(120) NOT NULL,
+  `turno` char(7) NOT NULL,
+  `html_path` varchar(255) NOT NULL,
+  `pdf_path` varchar(255) NOT NULL,
+  `creado_en` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estructura de tabla para la tabla `parte_arma_data`
+--
+
+CREATE TABLE `parte_arma_data` (
+  `id` int(11) NOT NULL,
+  `parte_id` int(11) NOT NULL,
+  `cenope_json` mediumtext NOT NULL,
+  `redise_json` mediumtext NOT NULL,
+  `texto_ccc` mediumtext NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -171,6 +203,20 @@ CREATE TABLE `personal_internado` (
 -- --------------------------------------------------------
 
 --
+-- Estructura de tabla para la tabla `redise_snapshot`
+--
+
+CREATE TABLE `redise_snapshot` (
+  `id` int(11) NOT NULL,
+  `turno` char(7) NOT NULL,
+  `creado_en` datetime NOT NULL DEFAULT current_timestamp(),
+  `texto_ccc` mediumtext NOT NULL,
+  `data_json` mediumtext NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Estructura de tabla para la tabla `sistema_estado`
 --
 
@@ -213,6 +259,28 @@ CREATE TABLE `unidad` (
   `id` int(11) NOT NULL,
   `nombre` varchar(100) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Estructura Stand-in para la vista `v_novedad_front`
+-- (Véase abajo para la vista actual)
+--
+CREATE TABLE `v_novedad_front` (
+`id` int(11)
+,`titulo` varchar(140)
+,`descripcion` text
+,`categoria_id` tinyint(4)
+,`unidad_id` int(11)
+,`servicio` varchar(40)
+,`ticket` varchar(60)
+,`prioridad` enum('BAJA','MEDIA','ALTA')
+,`estado_front` varchar(11)
+,`fecha_inicio` datetime
+,`fecha_resolucion` datetime
+,`creado_por` varchar(80)
+,`actualizado_en` datetime
+);
 
 -- --------------------------------------------------------
 
@@ -272,6 +340,15 @@ CREATE TABLE `v_personal_internado_orden` (
 -- --------------------------------------------------------
 
 --
+-- Estructura para la vista `v_novedad_front`
+--
+DROP TABLE IF EXISTS `v_novedad_front`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY INVOKER VIEW `v_novedad_front`  AS SELECT `n`.`id` AS `id`, `n`.`titulo` AS `titulo`, `n`.`descripcion` AS `descripcion`, `n`.`categoria_id` AS `categoria_id`, `n`.`unidad_id` AS `unidad_id`, `n`.`servicio` AS `servicio`, `n`.`ticket` AS `ticket`, `n`.`prioridad` AS `prioridad`, CASE `n`.`estado` WHEN 'ABIERTO' THEN 'NUEVA' WHEN 'EN_PROCESO' THEN 'ACTUALIZADA' WHEN 'RESUELTO' THEN 'RESUELTA' ELSE 'ACTUALIZADA' END AS `estado_front`, `n`.`fecha_inicio` AS `fecha_inicio`, `n`.`fecha_resolucion` AS `fecha_resolucion`, `n`.`creado_por` AS `creado_por`, `n`.`actualizado_en` AS `actualizado_en` FROM `novedad` AS `n` ;
+
+-- --------------------------------------------------------
+
+--
 -- Estructura para la vista `v_personal_alta_orden`
 --
 DROP TABLE IF EXISTS `v_personal_alta_orden`;
@@ -325,6 +402,22 @@ ALTER TABLE `novedad_evento`
   ADD KEY `idx_evt_tipo` (`tipo`);
 
 --
+-- Indices de la tabla `parte_arma`
+--
+ALTER TABLE `parte_arma`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_desde_hasta` (`desde`,`hasta`),
+  ADD KEY `idx_turno` (`turno`),
+  ADD KEY `idx_creado_en` (`creado_en`);
+
+--
+-- Indices de la tabla `parte_arma_data`
+--
+ALTER TABLE `parte_arma_data`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `fk_pad_parte` (`parte_id`);
+
+--
 -- Indices de la tabla `parte_encabezado`
 --
 ALTER TABLE `parte_encabezado`
@@ -357,6 +450,14 @@ ALTER TABLE `personal_internado`
   ADD KEY `idx_pi_ape` (`apellidoNombre`),
   ADD KEY `idx_pi_cat` (`categoria`),
   ADD KEY `idx_pi_apellonombre` (`apellido_nombre`);
+
+--
+-- Indices de la tabla `redise_snapshot`
+--
+ALTER TABLE `redise_snapshot`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_turno` (`turno`),
+  ADD KEY `idx_creado_en` (`creado_en`);
 
 --
 -- Indices de la tabla `sistema_estado`
@@ -394,6 +495,18 @@ ALTER TABLE `novedad_evento`
   MODIFY `id` bigint(20) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT de la tabla `parte_arma`
+--
+ALTER TABLE `parte_arma`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `parte_arma_data`
+--
+ALTER TABLE `parte_arma_data`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT de la tabla `parte_encabezado`
 --
 ALTER TABLE `parte_encabezado`
@@ -415,6 +528,12 @@ ALTER TABLE `personal_fallecido`
 -- AUTO_INCREMENT de la tabla `personal_internado`
 --
 ALTER TABLE `personal_internado`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de la tabla `redise_snapshot`
+--
+ALTER TABLE `redise_snapshot`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
@@ -445,6 +564,12 @@ ALTER TABLE `novedad`
 --
 ALTER TABLE `novedad_evento`
   ADD CONSTRAINT `fk_evt_nov` FOREIGN KEY (`novedad_id`) REFERENCES `novedad` (`id`);
+
+--
+-- Filtros para la tabla `parte_arma_data`
+--
+ALTER TABLE `parte_arma_data`
+  ADD CONSTRAINT `fk_pad_parte` FOREIGN KEY (`parte_id`) REFERENCES `parte_arma` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

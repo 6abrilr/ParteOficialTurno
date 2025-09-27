@@ -1,54 +1,104 @@
 <?php
-json($stmt->fetchAll());
+// php/api_novedades.php
+declare(strict_types=1);
+ini_set('display_errors','0');
+header('Content-Type: application/json; charset=utf-8');
 
+require_once __DIR__.'/db.php';
 
-case 'POST:crear':
-$data = json_decode(file_get_contents('php://input'), true);
-$sql = "INSERT INTO novedad (titulo, descripcion, categoria_id, unidad_id, servicio, ticket, prioridad, estado, creado_por)
-VALUES (?,?,?,?,?,?,?,?,?)";
-pdo()->prepare($sql)->execute([
-$data['titulo'], $data['descripcion'], $data['categoria_id'], $data['unidad_id'] ?: null,
-$data['servicio'] ?: null, $data['ticket'] ?: null, $data['prioridad'] ?? 'MEDIA', 'ABIERTO', $data['usuario'] ?? null
-]);
-$id = pdo()->lastInsertId();
-pdo()->prepare("INSERT INTO novedad_evento (novedad_id, tipo, detalle, usuario) VALUES (?,?,?,?)")
-->execute([$id,'CREADA',$data['descripcion'] ?? null,$data['usuario'] ?? null]);
-json(['ok'=>true,'id'=>$id],201);
-
-
-case 'POST:actualizar':
-$data = json_decode(file_get_contents('php://input'), true);
-$sql = "UPDATE novedad SET titulo=?, descripcion=?, categoria_id=?, unidad_id=?, servicio=?, ticket=?, prioridad=?, actualizado_en=NOW() WHERE id=?";
-pdo()->prepare($sql)->execute([
-$data['titulo'],$data['descripcion'],$data['categoria_id'],$data['unidad_id'] ?: null,
-$data['servicio'] ?: null,$data['ticket'] ?: null,$data['prioridad'] ?? 'MEDIA',$data['id']
-]);
-pdo()->prepare("INSERT INTO novedad_evento (novedad_id, tipo, detalle, usuario) VALUES (?,?,?,?)")
-->execute([$data['id'],'ACTUALIZADA',$data['detalle'] ?? null,$data['usuario'] ?? null]);
-json(['ok'=>true]);
-
-
-case 'POST:resolver':
-$data = json_decode(file_get_contents('php://input'), true);
-pdo()->prepare("UPDATE novedad SET estado='RESUELTO', fecha_resolucion=NOW(), actualizado_en=NOW() WHERE id=?")
-->execute([$data['id']]);
-pdo()->prepare("INSERT INTO novedad_evento (novedad_id, tipo, detalle, usuario) VALUES (?,?,?,?)")
-->execute([$data['id'],'RESUELTA',$data['detalle'] ?? null,$data['usuario'] ?? null]);
-json(['ok'=>true]);
-
-
-case 'POST:reabrir':
-$data = json_decode(file_get_contents('php://input'), true);
-pdo()->prepare("UPDATE novedad SET estado='EN_PROCESO', fecha_resolucion=NULL, actualizado_en=NOW() WHERE id=?")
-->execute([$data['id']]);
-pdo()->prepare("INSERT INTO novedad_evento (novedad_id, tipo, detalle, usuario) VALUES (?,?,?,?)")
-->execute([$data['id'],'REABIERTA',$data['detalle'] ?? null,$data['usuario'] ?? null]);
-json(['ok'=>true]);
-
-
-default:
-json(['error'=>'Ruta no encontrada'],404);
+function json_out($arr, int $code=200){
+  http_response_code($code);
+  echo json_encode($arr, JSON_UNESCAPED_UNICODE);
+  exit;
 }
+
+try {
+  $pdo = db(); // PDO con ERRMODE_EXCEPTION
+
+  $action = $_GET['action'] ?? '';
+  $raw = file_get_contents('php://input') ?: '';
+  $pay = $raw ? (json_decode($raw, true) ?: []) : [];
+
+  if ($action === 'lista') {
+    $sql = "SELECT n.id,
+                   n.fecha_inicio,
+                   n.titulo,
+                   n.descripcion,
+                   COALESCE(c.nombre,'') AS categoria,
+                   COALESCE(u.nombre,'') AS unidad,
+                   n.prioridad
+            FROM novedad n
+            LEFT JOIN categoria c ON c.id = n.categoria_id
+            LEFT JOIN unidad    u ON u.id = n.unidad_id
+            WHERE n.estado <> 'RESUELTO'
+            ORDER BY n.fecha_inicio DESC";
+    $rows = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    json_out(array_map(function($r){
+      return [
+        'id'           => (int)$r['id'],
+        'fecha_inicio' => $r['fecha_inicio'],
+        'titulo'       => $r['titulo'],
+        'descripcion'  => $r['descripcion'],
+        'categoria'    => $r['categoria'],
+        'unidad'       => $r['unidad'],
+        'prioridad'    => $r['prioridad'],
+      ];
+    }, $rows));
+  }
+
+  if ($action === 'crear') {
+    $st = $pdo->prepare(
+      "INSERT INTO novedad
+         (titulo, descripcion, categoria_id, unidad_id, servicio, ticket, prioridad, estado, creado_por, fecha_inicio)
+       VALUES
+         (:titulo, :descripcion, :categoria_id, :unidad_id, :servicio, :ticket, :prioridad, 'ABIERTO', :creado_por, NOW())"
+    );
+    $st->execute([
+      ':titulo'       => trim($pay['titulo'] ?? ''),
+      ':descripcion'  => trim($pay['descripcion'] ?? ''),
+      ':categoria_id' => (int)($pay['categoria_id'] ?? 1),
+      ':unidad_id'    => ($pay['unidad_id'] ?? null) !== null ? (int)$pay['unidad_id'] : null,
+      ':servicio'     => trim($pay['servicio'] ?? ''),
+      ':ticket'       => trim($pay['ticket'] ?? ''),
+      ':prioridad'    => in_array($pay['prioridad'] ?? 'MEDIA', ['BAJA','MEDIA','ALTA'], true) ? $pay['prioridad'] : 'MEDIA',
+      ':creado_por'   => trim($pay['usuario'] ?? ''),
+    ]);
+    json_out(['ok'=>true,'id'=>(int)$pdo->lastInsertId()]);
+  }
+
+  if ($action === 'actualizar') {
+    $st = $pdo->prepare(
+      "UPDATE novedad
+          SET titulo=:titulo,
+              descripcion=:descripcion,
+              categoria_id=:categoria_id,
+              unidad_id=:unidad_id,
+              servicio=:servicio,
+              ticket=:ticket,
+              prioridad=:prioridad
+        WHERE id=:id"
+    );
+    $st->execute([
+      ':titulo'       => trim($pay['titulo'] ?? ''),
+      ':descripcion'  => trim($pay['descripcion'] ?? ''),
+      ':categoria_id' => (int)($pay['categoria_id'] ?? 1),
+      ':unidad_id'    => ($pay['unidad_id'] ?? null) !== null ? (int)$pay['unidad_id'] : null,
+      ':servicio'     => trim($pay['servicio'] ?? ''),
+      ':ticket'       => trim($pay['ticket'] ?? ''),
+      ':prioridad'    => in_array($pay['prioridad'] ?? 'MEDIA', ['BAJA','MEDIA','ALTA'], true) ? $pay['prioridad'] : 'MEDIA',
+      ':id'           => (int)($pay['id'] ?? 0),
+    ]);
+    json_out(['ok'=>true]);
+  }
+
+  if ($action === 'resolver') {
+    $st = $pdo->prepare("UPDATE novedad SET estado='RESUELTO', fecha_resolucion=NOW() WHERE id=:id");
+    $st->execute([':id'=>(int)($pay['id'] ?? 0)]);
+    json_out(['ok'=>true]);
+  }
+
+  json_out(['ok'=>false,'error'=>'Acción no válida'], 400);
+
 } catch (Throwable $e) {
-json(['error'=>$e->getMessage()],500);
+  json_out(['ok'=>false,'error'=>$e->getMessage()], 500);
 }
