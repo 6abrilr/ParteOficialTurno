@@ -7,122 +7,162 @@
  *
  * Requiere Composer (vendor/autoload.php). Poppler opcional.
  */
-require_once __DIR__.'/db.php';
+declare(strict_types=1);
+
+require_once __DIR__ . '/db.php';
 
 // === Composer ===
-$autoload = dirname(__DIR__).'/vendor/autoload.php';
+$autoload = dirname(__DIR__) . '/vendor/autoload.php';
 if (is_file($autoload)) { require_once $autoload; }
 
 // === Config Poppler (fallback) ===
-// !!! RUTA CONFIRMADA POR VOS:
+// Ajustá si fuera necesario
 $PDFTOTEXT = 'C:\\Release-25.07.0-0\\Library\\bin\\pdftotext.exe';
 
 header('Content-Type: application/json; charset=utf-8');
 
 try {
-  if (!isset($_FILES['pdf'])) throw new Exception('No se recibió el PDF');
-  $dry = ($_POST['dry'] ?? '1') === '1';
+  if (!isset($_FILES['pdf'])) {
+    throw new Exception('No se recibió el PDF');
+  }
+  $dry  = (($_POST['dry'] ?? '1') === '1');
 
-  $tmp = sys_get_temp_dir().DIRECTORY_SEPARATOR.'cenope_'.uniqid().'.pdf';
-  if (!move_uploaded_file($_FILES['pdf']['tmp_name'], $tmp)) throw new Exception('No se pudo guardar el archivo');
+  $tmp = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cenope_' . uniqid() . '.pdf';
+  if (!move_uploaded_file($_FILES['pdf']['tmp_name'], $tmp)) {
+    throw new Exception('No se pudo guardar el archivo temporal');
+  }
 
   // 1) Intento con Smalot (si está instalado)
   [$text, $src] = ['', ''];
   if (class_exists(\Smalot\PdfParser\Parser::class)) {
     try {
       $parser = new \Smalot\PdfParser\Parser();
-      $pdf = $parser->parseFile($tmp);
-      $text = $pdf->getText();
-      $src  = 'smalot/pdfparser';
+      $pdf    = $parser->parseFile($tmp);
+      $text   = $pdf->getText();
+      $src    = 'smalot/pdfparser';
     } catch (Throwable $e) {
-      // sigue
+      // sigue al fallback
     }
   }
 
   // 2) Fallback Poppler si no salió nada
-  if (trim($text)==='') {
+  if (trim($text) === '') {
     [$t2, $err] = pdf_to_text_poppler($tmp, $PDFTOTEXT);
     if ($t2 !== '') { $text = $t2; $src = 'pdftotext'; }
   }
 
-  if (trim($text)==='') {
-    throw new Exception('No se pudo extraer texto. Puede ser un PDF escaneado (imagen). Probá exportar el Anexo como “PDF con texto” o pasarlo por OCR antes de importar.');
+  if (trim($text) === '') {
+    throw new Exception('No se pudo extraer texto. Puede ser un PDF escaneado (imagen). Exportá como “PDF con texto” o pasalo por OCR.');
   }
 
+  // Normalización y parseo
   $clean  = normalize_text($text);
   $parsed = parse_cenope($clean); // ['internado'=>[], 'alta'=>[], 'fallecido'=>[]]
 
-  // Si no encontró nada, devolveme 500 chars de muestra para depurar
+  // Si no encontró nada, devolvé un snippet para depurar
   if (empty($parsed['internado']) && empty($parsed['alta']) && empty($parsed['fallecido'])) {
     echo json_encode([
-      'ok'=>true,
-      'internado'=>[],
-      'alta'=>[],
-      'fallecido'=>[],
-      'debug'=>[
-        'extractor'=>$src ?: 'desconocido',
-        'snippet'=>mb_substr($clean,0,500)
+      'ok' => true,
+      'internado' => [],
+      'alta' => [],
+      'fallecido' => [],
+      'debug' => [
+        'extractor' => $src ?: 'desconocido',
+        'snippet'   => mb_substr($clean, 0, 500)
       ]
     ], JSON_UNESCAPED_UNICODE);
     exit;
   }
 
+  // Dry-run: solo previsualización
   if ($dry) {
-    echo json_encode(['ok'=>true,'_src'=>$src]+$parsed, JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok' => true, '_src' => $src] + $parsed, JSON_UNESCAPED_UNICODE);
     exit;
   }
 
-  // Persistencia (reemplaza)
-  $pdo = pdo();
+  // === Persistencia (reemplaza contenido) ===
+  $pdo = db(); // <<<<<< reemplaza pdo() por tu helper
   $pdo->beginTransaction();
+
+  // Limpio tablas destino (ajustá si preferís DELETE con condiciones)
   $pdo->exec("TRUNCATE personal_internado");
   $pdo->exec("TRUNCATE personal_alta");
   $pdo->exec("TRUNCATE personal_fallecido");
 
-  $insI = $pdo->prepare("INSERT INTO personal_internado (categoria,nro,grado,apellido_nombre,arma,unidad,prom,fecha,habitacion,hospital) VALUES (?,?,?,?,?,?,?,?,?,?)");
+  // Insert internados
+  $insI = $pdo->prepare("
+    INSERT INTO personal_internado
+      (categoria, nro, grado, apellido_nombre, arma, unidad, prom, fecha, habitacion, hospital)
+    VALUES
+      (:categoria, :nro, :grado, :apnom, :arma, :unidad, :prom, :fecha, :hab, :hos)
+  ");
   foreach ($parsed['internado'] as $r) {
     $insI->execute([
-      $r['categoria'], $r['Nro']??null, $r['Grado']??null, $r['Apellido y Nombre']??null,
-      $r['Arma']??null, $r['Unidad']??null, $r['Prom']??null,
-      norm_date($r['Fecha']??null), $r['Habitación']??null, $r['Hospital']??null
+      ':categoria' => $r['categoria'] ?? null,
+      ':nro'       => $r['Nro'] ?? null,
+      ':grado'     => $r['Grado'] ?? null,
+      ':apnom'     => $r['Apellido y Nombre'] ?? null,
+      ':arma'      => $r['Arma'] ?? null,
+      ':unidad'    => $r['Unidad'] ?? null,
+      ':prom'      => $r['Prom'] ?? null,
+      ':fecha'     => norm_date($r['Fecha'] ?? null),
+      ':hab'       => $r['Habitación'] ?? null,
+      ':hos'       => $r['Hospital'] ?? null,
     ]);
   }
 
-  $insA = $pdo->prepare("INSERT INTO personal_alta (categoria,grado,apellido_nombre,arma,unidad,prom,fecha,hospital) VALUES (?,?,?,?,?,?,?,?)");
+  // Insert altas
+  $insA = $pdo->prepare("
+    INSERT INTO personal_alta
+      (categoria, grado, apellido_nombre, arma, unidad, prom, fecha, hospital)
+    VALUES
+      (:categoria, :grado, :apnom, :arma, :unidad, :prom, :fecha, :hos)
+  ");
   foreach ($parsed['alta'] as $r) {
     $insA->execute([
-      $r['categoria'], $r['Grado']??null, $r['Apellido y Nombre']??null,
-      $r['Arma']??null, $r['Unidad']??null, $r['Prom']??null,
-      norm_date($r['Fecha']??null), $r['Hospital']??null
+      ':categoria' => $r['categoria'] ?? null,
+      ':grado'     => $r['Grado'] ?? null,
+      ':apnom'     => $r['Apellido y Nombre'] ?? null,
+      ':arma'      => $r['Arma'] ?? null,
+      ':unidad'    => $r['Unidad'] ?? null,
+      ':prom'      => $r['Prom'] ?? null,
+      ':fecha'     => norm_date($r['Fecha'] ?? null),
+      ':hos'       => $r['Hospital'] ?? null,
     ]);
   }
 
-  $insF = $pdo->prepare("INSERT INTO personal_fallecido (detalle) VALUES (?)");
-  foreach ($parsed['fallecido'] as $txt) { $insF->execute([$txt]); }
+  // Insert fallecidos (texto libre)
+  $insF = $pdo->prepare("INSERT INTO personal_fallecido (detalle) VALUES (:detalle)");
+  foreach ($parsed['fallecido'] as $txt) {
+    $insF->execute([':detalle' => $txt]);
+  }
 
   $pdo->commit();
 
   echo json_encode([
-    'ok'=>true,'_src'=>$src,
-    'internado'=>count($parsed['internado']),
-    'alta'=>count($parsed['alta']),
-    'fallecido'=>count($parsed['fallecido'])
+    'ok'        => true,
+    '_src'      => $src,
+    'internado' => count($parsed['internado']),
+    'alta'      => count($parsed['alta']),
+    'fallecido' => count($parsed['fallecido'])
   ], JSON_UNESCAPED_UNICODE);
 
 } catch (Throwable $e) {
+  // Si había transacción abierta, rollback
+  try { if (isset($pdo)) { $pdo->rollBack(); } } catch (Throwable $e2) {}
   http_response_code(500);
-  echo json_encode(['ok'=>false,'error'=>$e->getMessage()], JSON_UNESCAPED_UNICODE);
+  echo json_encode(['ok' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
 }
 
 /* =================== Helpers =================== */
 
 function pdf_to_text_poppler(string $pdf, string $bin): array {
   if (!$bin || !is_file($bin)) return ['', 'pdftotext.exe no disponible'];
-  $out = $pdf.'.txt';
+  $out = $pdf . '.txt';
   @unlink($out);
   $spec = [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']];
-  $cmd  = escapeshellcmd($bin).' -layout -nopgbrk '.escapeshellarg($pdf).' '.escapeshellarg($out);
-  $p = proc_open($cmd,$spec,$pipes);
+  $cmd  = escapeshellcmd($bin) . ' -layout -nopgbrk ' . escapeshellarg($pdf) . ' ' . escapeshellarg($out);
+  $p = proc_open($cmd, $spec, $pipes);
   if (is_resource($p)) {
     fclose($pipes[0]);
     stream_get_contents($pipes[1]); // stdout no lo usamos
