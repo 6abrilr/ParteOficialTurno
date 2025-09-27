@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Servidor: 127.0.0.1
--- Tiempo de generación: 27-09-2025 a las 16:08:10
+-- Tiempo de generación: 27-09-2025 a las 21:05:01
 -- Versión del servidor: 10.4.32-MariaDB
 -- Versión de PHP: 8.2.12
 
@@ -132,8 +132,7 @@ CREATE TABLE `parte_encabezado` (
 --
 
 INSERT INTO `parte_encabezado` (`id`, `fecha_desde`, `fecha_hasta`, `oficial_turno`, `suboficial_turno`) VALUES
-(1, '2025-09-23 08:00:00', '2025-09-24 08:00:00', '', ''),
-(2, '2025-09-24 08:00:00', '2025-09-25 08:00:00', 'ST SCD NESTOR ROJAS', 'CI OF MANUEL HERRERA');
+(1, '2025-09-27 08:00:00', '2025-09-28 08:00:00', 'ST ROJAS', 'CB MARTINEZ');
 
 -- --------------------------------------------------------
 
@@ -147,13 +146,14 @@ CREATE TABLE `personal_alta` (
   `nro` int(11) DEFAULT NULL,
   `grado` varchar(5) NOT NULL,
   `apellido_nombre` varchar(120) DEFAULT NULL,
-  `apellidoNombre` varchar(120) NOT NULL,
+  `apellidoNombre` varchar(120) DEFAULT '',
   `arma` varchar(40) DEFAULT NULL,
   `unidad` varchar(80) DEFAULT NULL,
   `prom` varchar(20) DEFAULT NULL,
   `fecha` date DEFAULT NULL,
   `habitacion` varchar(40) DEFAULT NULL,
   `hospital` varchar(80) DEFAULT NULL,
+  `detalle` text DEFAULT NULL,
   `creado_en` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -165,9 +165,11 @@ CREATE TABLE `personal_alta` (
 
 CREATE TABLE `personal_fallecido` (
   `id` int(11) NOT NULL,
+  `categoria` enum('OFICIALES','SUBOFICIALES','SOLDADOS VOLUNTARIOS') DEFAULT NULL,
   `nro` int(11) DEFAULT NULL,
   `grado` varchar(5) NOT NULL,
-  `apellidoNombre` varchar(120) NOT NULL,
+  `apellido_nombre` varchar(120) DEFAULT NULL,
+  `apellidoNombre` varchar(120) DEFAULT '',
   `arma` varchar(40) DEFAULT NULL,
   `unidad` varchar(80) DEFAULT NULL,
   `prom` varchar(20) DEFAULT NULL,
@@ -190,15 +192,26 @@ CREATE TABLE `personal_internado` (
   `nro` int(11) DEFAULT NULL,
   `grado` varchar(5) NOT NULL,
   `apellido_nombre` varchar(120) DEFAULT NULL,
-  `apellidoNombre` varchar(120) NOT NULL,
+  `apellidoNombre` varchar(120) DEFAULT '',
   `arma` varchar(40) DEFAULT NULL,
   `unidad` varchar(80) DEFAULT NULL,
   `prom` varchar(20) DEFAULT NULL,
   `fecha` date DEFAULT NULL,
   `habitacion` varchar(40) DEFAULT NULL,
   `hospital` varchar(80) DEFAULT NULL,
+  `detalle` text DEFAULT NULL,
   `creado_en` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Volcado de datos para la tabla `personal_internado`
+--
+
+INSERT INTO `personal_internado` (`id`, `categoria`, `nro`, `grado`, `apellido_nombre`, `apellidoNombre`, `arma`, `unidad`, `prom`, `fecha`, `habitacion`, `hospital`, `detalle`, `creado_en`) VALUES
+(1, 'OFICIALES', 1, 'CR', 'LANDA DIEGO HORACIO', '', 'Com', NULL, NULL, '2025-09-22', '433', NULL, NULL, '2025-09-27 15:58:31'),
+(2, 'SUBOFICIALES', 2, 'SP', 'Lance Gustavo Daniel', '', 'Com', 'Ca', NULL, '2025-07-22', '6', NULL, NULL, '2025-09-27 15:58:31'),
+(3, 'SUBOFICIALES', 3, 'SP', 'Peña German David', '', 'Com', 'RG', NULL, '2025-07-24', '618', NULL, NULL, '2025-09-27 15:58:31'),
+(4, 'SUBOFICIALES', 4, 'SA', 'GARINO RAUL', '', 'ABEL Com', 'RG', NULL, '2025-05-12', '332', NULL, NULL, '2025-09-27 15:58:31');
 
 -- --------------------------------------------------------
 
@@ -235,19 +248,17 @@ CREATE TABLE `sistema_estado` (
 --
 
 INSERT INTO `sistema_estado` (`id`, `categoria_id`, `nombre`, `estado`, `novedad`, `ticket`, `actualizado_en`) VALUES
-(1, 2, 'WEB OFICIAL DEL EJERCITO', 'EN LINEA', NULL, NULL, '2025-09-23 13:10:37'),
-(2, 2, 'PORTAL EJERCITO', 'EN LINEA', NULL, NULL, '2025-09-23 13:10:37'),
-(3, 2, 'INTRANET', 'EN LINEA', NULL, NULL, '2025-09-23 13:10:37'),
-(4, 2, 'WEBMAIL', 'EN LINEA', NULL, NULL, '2025-09-23 13:10:37'),
-(5, 2, 'GUIA TELEFONICA', 'NOVEDAD', '', '', '2025-09-24 10:54:53'),
-(6, 2, 'SITM2', 'EN LINEA', NULL, NULL, '2025-09-23 13:10:37'),
-(7, 3, 'MODERNIZACION', 'EN LINEA', NULL, NULL, '2025-09-23 13:10:37'),
-(8, 3, 'GCBA', 'EN LINEA', NULL, NULL, '2025-09-23 13:10:37'),
-(9, 3, 'TELECOM (BGP)', 'EN LINEA', NULL, NULL, '2025-09-23 13:10:37'),
-(10, 4, 'INTERNO', 'EN LINEA', NULL, NULL, '2025-09-23 13:10:37'),
-(11, 4, 'SALIDA TEL FIJA', 'EN LINEA', NULL, NULL, '2025-09-23 13:10:37'),
-(12, 4, 'SALIDA TEL MOVIL', 'EN LINEA', NULL, NULL, '2025-09-23 13:10:37'),
-(13, 6, 'SITM2', 'EN LINEA', NULL, NULL, '2025-09-23 13:10:37');
+(1, 2, 'WEB OFICIAL DEL EJERCITO', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
+(2, 2, 'PORTAL EJERCITO', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
+(3, 2, 'INTRANET', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
+(4, 2, 'WEBMAIL', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
+(5, 3, 'MODERNIZACION', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
+(6, 3, 'GCBA', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
+(7, 3, 'TELECOM (BGP)', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
+(8, 4, 'INTERNO', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
+(9, 4, 'SALIDA TEL FIJA', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
+(10, 4, 'SALIDA TEL MOVIL', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
+(11, 6, 'SITM2', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17');
 
 -- --------------------------------------------------------
 
@@ -344,7 +355,7 @@ CREATE TABLE `v_personal_internado_orden` (
 --
 DROP TABLE IF EXISTS `v_novedad_front`;
 
-CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY INVOKER VIEW `v_novedad_front`  AS SELECT `n`.`id` AS `id`, `n`.`titulo` AS `titulo`, `n`.`descripcion` AS `descripcion`, `n`.`categoria_id` AS `categoria_id`, `n`.`unidad_id` AS `unidad_id`, `n`.`servicio` AS `servicio`, `n`.`ticket` AS `ticket`, `n`.`prioridad` AS `prioridad`, CASE `n`.`estado` WHEN 'ABIERTO' THEN 'NUEVA' WHEN 'EN_PROCESO' THEN 'ACTUALIZADA' WHEN 'RESUELTO' THEN 'RESUELTA' ELSE 'ACTUALIZADA' END AS `estado_front`, `n`.`fecha_inicio` AS `fecha_inicio`, `n`.`fecha_resolucion` AS `fecha_resolucion`, `n`.`creado_por` AS `creado_por`, `n`.`actualizado_en` AS `actualizado_en` FROM `novedad` AS `n` ;
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v_novedad_front`  AS SELECT `n`.`id` AS `id`, `n`.`titulo` AS `titulo`, `n`.`descripcion` AS `descripcion`, `n`.`categoria_id` AS `categoria_id`, `n`.`unidad_id` AS `unidad_id`, `n`.`servicio` AS `servicio`, `n`.`ticket` AS `ticket`, `n`.`prioridad` AS `prioridad`, CASE `n`.`estado` WHEN 'ABIERTO' THEN 'NUEVA' WHEN 'EN_PROCESO' THEN 'ACTUALIZADA' WHEN 'RESUELTO' THEN 'RESUELTA' ELSE 'ACTUALIZADA' END AS `estado_front`, `n`.`fecha_inicio` AS `fecha_inicio`, `n`.`fecha_resolucion` AS `fecha_resolucion`, `n`.`creado_por` AS `creado_por`, `n`.`actualizado_en` AS `actualizado_en` FROM `novedad` AS `n` ;
 
 -- --------------------------------------------------------
 
@@ -362,7 +373,7 @@ CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW 
 --
 DROP TABLE IF EXISTS `v_personal_fallecido_orden`;
 
-CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v_personal_fallecido_orden`  AS SELECT row_number() over ( order by field(`personal_fallecido`.`grado`,'TG','GD','GB','CY','CR','TC','MY','CT','TP','TT','ST','SM','SP','SA','SI','SG','CI','CB','VP','VS','SV','SOLD'),`personal_fallecido`.`apellidoNombre`) AS `Nro`, `personal_fallecido`.`grado` AS `Grado`, `personal_fallecido`.`apellidoNombre` AS `Apellido y Nombre`, `personal_fallecido`.`arma` AS `Arma`, `personal_fallecido`.`unidad` AS `Unidad`, `personal_fallecido`.`prom` AS `Prom`, `personal_fallecido`.`fecha` AS `Fecha`, `personal_fallecido`.`habitacion` AS `Habitación`, `personal_fallecido`.`hospital` AS `Hospital` FROM `personal_fallecido` ;
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v_personal_fallecido_orden`  AS SELECT row_number() over ( order by field(`personal_fallecido`.`grado`,'TG','GD','GB','CY','CR','TC','MY','CT','TP','TT','ST','SM','SP','SA','SI','SG','CI','CB','VP','VS','SV','SOLD'),coalesce(`personal_fallecido`.`apellido_nombre`,`personal_fallecido`.`apellidoNombre`)) AS `Nro`, `personal_fallecido`.`grado` AS `Grado`, coalesce(`personal_fallecido`.`apellido_nombre`,`personal_fallecido`.`apellidoNombre`) AS `Apellido y Nombre`, `personal_fallecido`.`arma` AS `Arma`, `personal_fallecido`.`unidad` AS `Unidad`, `personal_fallecido`.`prom` AS `Prom`, `personal_fallecido`.`fecha` AS `Fecha`, `personal_fallecido`.`habitacion` AS `Habitación`, `personal_fallecido`.`hospital` AS `Hospital` FROM `personal_fallecido` ;
 
 -- --------------------------------------------------------
 
@@ -382,7 +393,7 @@ CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW 
 --
 ALTER TABLE `categoria`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `nombre` (`nombre`);
+  ADD UNIQUE KEY `uk_nombre` (`nombre`);
 
 --
 -- Indices de la tabla `novedad`
@@ -421,25 +432,28 @@ ALTER TABLE `parte_arma_data`
 -- Indices de la tabla `parte_encabezado`
 --
 ALTER TABLE `parte_encabezado`
-  ADD PRIMARY KEY (`id`);
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_fecha_desde_hasta` (`fecha_desde`,`fecha_hasta`);
 
 --
 -- Indices de la tabla `personal_alta`
 --
 ALTER TABLE `personal_alta`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_pa_grado` (`grado`),
-  ADD KEY `idx_pa_ape` (`apellidoNombre`),
-  ADD KEY `idx_pa_cat` (`categoria`),
-  ADD KEY `idx_pa_apellonombre` (`apellido_nombre`);
+  ADD KEY `idx_pi_grado` (`grado`),
+  ADD KEY `idx_pi_ape` (`apellidoNombre`),
+  ADD KEY `idx_pi_cat` (`categoria`),
+  ADD KEY `idx_pi_apellonombre` (`apellido_nombre`);
 
 --
 -- Indices de la tabla `personal_fallecido`
 --
 ALTER TABLE `personal_fallecido`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_pf_grado` (`grado`),
-  ADD KEY `idx_pf_ape` (`apellidoNombre`);
+  ADD KEY `idx_pi_grado` (`grado`),
+  ADD KEY `idx_pi_ape` (`apellidoNombre`),
+  ADD KEY `idx_pi_cat` (`categoria`),
+  ADD KEY `idx_pi_apellonombre` (`apellido_nombre`);
 
 --
 -- Indices de la tabla `personal_internado`
@@ -528,7 +542,7 @@ ALTER TABLE `personal_fallecido`
 -- AUTO_INCREMENT de la tabla `personal_internado`
 --
 ALTER TABLE `personal_internado`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT de la tabla `redise_snapshot`
@@ -540,7 +554,7 @@ ALTER TABLE `redise_snapshot`
 -- AUTO_INCREMENT de la tabla `sistema_estado`
 --
 ALTER TABLE `sistema_estado`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT de la tabla `unidad`
@@ -570,6 +584,12 @@ ALTER TABLE `novedad_evento`
 --
 ALTER TABLE `parte_arma_data`
   ADD CONSTRAINT `fk_pad_parte` FOREIGN KEY (`parte_id`) REFERENCES `parte_arma` (`id`) ON DELETE CASCADE;
+
+--
+-- Filtros para la tabla `sistema_estado`
+--
+ALTER TABLE `sistema_estado`
+  ADD CONSTRAINT `fk_sist_cat` FOREIGN KEY (`categoria_id`) REFERENCES `categoria` (`id`);
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

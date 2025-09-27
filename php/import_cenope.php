@@ -1,161 +1,138 @@
 <?php
-/**
- * Importa Anexo 2 del CENOPE (PDF) → tablas personal_*.
- * - Primero intenta con smalot/pdfparser (PHP puro).
- * - Si no obtiene texto, intenta con Poppler (pdftotext.exe).
- * - Parser multilínea + filtro Comunicaciones (igual al tuyo).
- *
- * Requiere Composer (vendor/autoload.php). Poppler opcional.
- */
 declare(strict_types=1);
-
 require_once __DIR__ . '/db.php';
 
-// === Composer ===
 $autoload = dirname(__DIR__) . '/vendor/autoload.php';
 if (is_file($autoload)) { require_once $autoload; }
 
-// === Config Poppler (fallback) ===
-// Ajustá si fuera necesario
+// Ajustá si hace falta
 $PDFTOTEXT = 'C:\\Release-25.07.0-0\\Library\\bin\\pdftotext.exe';
 
 header('Content-Type: application/json; charset=utf-8');
 
 try {
-  if (!isset($_FILES['pdf'])) {
-    throw new Exception('No se recibió el PDF');
-  }
-  $dry  = (($_POST['dry'] ?? '1') === '1');
+  if (!isset($_FILES['pdf'])) throw new Exception('No se recibió el PDF');
+  $dry = (($_POST['dry'] ?? '1') === '1');
 
-  $tmp = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cenope_' . uniqid() . '.pdf';
+  $tmp = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cenope_' . uniqid('', true) . '.pdf';
   if (!move_uploaded_file($_FILES['pdf']['tmp_name'], $tmp)) {
     throw new Exception('No se pudo guardar el archivo temporal');
   }
 
-  // 1) Intento con Smalot (si está instalado)
-  [$text, $src] = ['', ''];
+  // ===== extracción de texto =====
+  $text = ''; $src = '';
   if (class_exists(\Smalot\PdfParser\Parser::class)) {
     try {
       $parser = new \Smalot\PdfParser\Parser();
       $pdf    = $parser->parseFile($tmp);
       $text   = $pdf->getText();
       $src    = 'smalot/pdfparser';
-    } catch (Throwable $e) {
-      // sigue al fallback
-    }
+    } catch (\Throwable $e) { /* fallback */ }
   }
-
-  // 2) Fallback Poppler si no salió nada
   if (trim($text) === '') {
     [$t2, $err] = pdf_to_text_poppler($tmp, $PDFTOTEXT);
     if ($t2 !== '') { $text = $t2; $src = 'pdftotext'; }
   }
+  if (trim($text) === '') throw new Exception('No se pudo extraer texto. Exportá el PDF con texto o pasalo por OCR.');
 
-  if (trim($text) === '') {
-    throw new Exception('No se pudo extraer texto. Puede ser un PDF escaneado (imagen). Exportá como “PDF con texto” o pasalo por OCR.');
-  }
-
-  // Normalización y parseo
+  // ===== parseo =====
   $clean  = normalize_text($text);
   $parsed = parse_cenope($clean); // ['internado'=>[], 'alta'=>[], 'fallecido'=>[]]
 
-  // Si no encontró nada, devolvé un snippet para depurar
-  if (empty($parsed['internado']) && empty($parsed['alta']) && empty($parsed['fallecido'])) {
-    echo json_encode([
-      'ok' => true,
-      'internado' => [],
-      'alta' => [],
-      'fallecido' => [],
-      'debug' => [
-        'extractor' => $src ?: 'desconocido',
-        'snippet'   => mb_substr($clean, 0, 500)
-      ]
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
-  }
+  if ($dry) { echo json_encode(['ok'=>true,'_src'=>$src] + $parsed, JSON_UNESCAPED_UNICODE); exit; }
 
-  // Dry-run: solo previsualización
-  if ($dry) {
-    echo json_encode(['ok' => true, '_src' => $src] + $parsed, JSON_UNESCAPED_UNICODE);
-    exit;
-  }
-
-  // === Persistencia (reemplaza contenido) ===
-  $pdo = db(); // <<<<<< reemplaza pdo() por tu helper
+  // ===== persistencia =====
+  $pdo = db();
+  $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+  $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
   $pdo->beginTransaction();
 
-  // Limpio tablas destino (ajustá si preferís DELETE con condiciones)
   $pdo->exec("TRUNCATE personal_internado");
   $pdo->exec("TRUNCATE personal_alta");
   $pdo->exec("TRUNCATE personal_fallecido");
 
-  // Insert internados
-  $insI = $pdo->prepare("
-    INSERT INTO personal_internado
-      (categoria, nro, grado, apellido_nombre, arma, unidad, prom, fecha, habitacion, hospital)
-    VALUES
-      (:categoria, :nro, :grado, :apnom, :arma, :unidad, :prom, :fecha, :hab, :hos)
-  ");
+  // helper de normalización
+  $toNull = fn($v)=>($v===null||$v==='')?null:$v;
+  $toInt  = function($v){ if($v===null||$v==='') return null; $v=str_replace(['.',',',' '],'',$v); return is_numeric($v)?(int)$v:null; };
+  $toDate = fn($v)=>norm_date($v??null) ?: null;
+
+  $cols = "(categoria,nro,grado,apellido_nombre,apellidoNombre,arma,unidad,prom,fecha,habitacion,hospital,detalle)";
+
+  // ------- INTERNADOS -------
+  $stI = $pdo->prepare("INSERT INTO personal_internado $cols VALUES (:cat,:nro,:gr,:ap1,:ap2,:ar,:un,:pr,:fe,:hb,:ho,:de)");
   foreach ($parsed['internado'] as $r) {
-    $insI->execute([
-      ':categoria' => $r['categoria'] ?? null,
-      ':nro'       => $r['Nro'] ?? null,
-      ':grado'     => $r['Grado'] ?? null,
-      ':apnom'     => $r['Apellido y Nombre'] ?? null,
-      ':arma'      => $r['Arma'] ?? null,
-      ':unidad'    => $r['Unidad'] ?? null,
-      ':prom'      => $r['Prom'] ?? null,
-      ':fecha'     => norm_date($r['Fecha'] ?? null),
-      ':hab'       => $r['Habitación'] ?? null,
-      ':hos'       => $r['Hospital'] ?? null,
-    ]);
+    $row = [
+      ':cat' => $toNull($r['categoria'] ?? null),
+      ':nro' => $toInt($r['Nro'] ?? null),
+      ':gr'  => (string)($r['Grado'] ?? ''), // NOT NULL en práctica
+      ':ap1' => (string)($r['Apellido y Nombre'] ?? ''),
+      ':ap2' => (string)($r['Apellido y Nombre'] ?? ''),
+      ':ar'  => $toNull($r['Arma'] ?? null),
+      ':un'  => $toNull($r['Unidad'] ?? null),
+      ':pr'  => $toNull($r['Prom'] ?? null),
+      ':fe'  => $toDate($r['Fecha'] ?? null),
+      ':hb'  => $toNull($r['Habitación'] ?? null),
+      ':ho'  => $toNull($r['Hospital'] ?? null),
+      ':de'  => null,
+    ];
+    try { $stI->execute($row); }
+    catch (\Throwable $e) {
+      throw new RuntimeException('Error al insertar en personal_internado: '.$e->getMessage().' | Datos: '.json_encode($row, JSON_UNESCAPED_UNICODE));
+    }
   }
 
-  // Insert altas
-  $insA = $pdo->prepare("
-    INSERT INTO personal_alta
-      (categoria, grado, apellido_nombre, arma, unidad, prom, fecha, hospital)
-    VALUES
-      (:categoria, :grado, :apnom, :arma, :unidad, :prom, :fecha, :hos)
-  ");
+  // ------- ALTAS -------
+  $stA = $pdo->prepare("INSERT INTO personal_alta $cols VALUES (:cat,:nro,:gr,:ap1,:ap2,:ar,:un,:pr,:fe,:hb,:ho,:de)");
   foreach ($parsed['alta'] as $r) {
-    $insA->execute([
-      ':categoria' => $r['categoria'] ?? null,
-      ':grado'     => $r['Grado'] ?? null,
-      ':apnom'     => $r['Apellido y Nombre'] ?? null,
-      ':arma'      => $r['Arma'] ?? null,
-      ':unidad'    => $r['Unidad'] ?? null,
-      ':prom'      => $r['Prom'] ?? null,
-      ':fecha'     => norm_date($r['Fecha'] ?? null),
-      ':hos'       => $r['Hospital'] ?? null,
-    ]);
+    $row = [
+      ':cat' => $toNull($r['categoria'] ?? null),
+      ':nro' => $toInt($r['Nro'] ?? null),
+      ':gr'  => (string)($r['Grado'] ?? ''),
+      ':ap1' => (string)($r['Apellido y Nombre'] ?? ''),
+      ':ap2' => (string)($r['Apellido y Nombre'] ?? ''),
+      ':ar'  => $toNull($r['Arma'] ?? null),
+      ':un'  => $toNull($r['Unidad'] ?? null),
+      ':pr'  => $toNull($r['Prom'] ?? null),
+      ':fe'  => $toDate($r['Fecha'] ?? null),
+      ':hb'  => $toNull($r['Habitación'] ?? null),
+      ':ho'  => $toNull($r['Hospital'] ?? null),
+      ':de'  => null,
+    ];
+    try { $stA->execute($row); }
+    catch (\Throwable $e) {
+      throw new RuntimeException('Error al insertar en personal_alta: '.$e->getMessage().' | Datos: '.json_encode($row, JSON_UNESCAPED_UNICODE));
+    }
   }
 
-  // Insert fallecidos (texto libre)
-  $insF = $pdo->prepare("INSERT INTO personal_fallecido (detalle) VALUES (:detalle)");
+  // ------- FALLECIDOS -------
+  // Si el parser solo trae texto crudo, guardamos en 'detalle' y dejamos el resto NULL.
+  $stF = $pdo->prepare("INSERT INTO personal_fallecido $cols VALUES (:cat,:nro,:gr,:ap1,:ap2,:ar,:un,:pr,:fe,:hb,:ho,:de)");
   foreach ($parsed['fallecido'] as $txt) {
-    $insF->execute([':detalle' => $txt]);
+    $row = [':cat'=>null,':nro'=>null,':gr'=>'',':ap1'=>null,':ap2'=>null,':ar'=>null,':un'=>null,':pr'=>null,':fe'=>null,':hb'=>null,':ho'=>null,':de'=>(string)$txt];
+    try { $stF->execute($row); }
+    catch (\Throwable $e) {
+      throw new RuntimeException('Error al insertar en personal_fallecido: '.$e->getMessage().' | Datos: '.json_encode($row, JSON_UNESCAPED_UNICODE));
+    }
   }
 
   $pdo->commit();
 
   echo json_encode([
-    'ok'        => true,
-    '_src'      => $src,
-    'internado' => count($parsed['internado']),
-    'alta'      => count($parsed['alta']),
-    'fallecido' => count($parsed['fallecido'])
+    'ok'=>true,'_src'=>$src,
+    'internado'=>count($parsed['internado']),
+    'alta'=>count($parsed['alta']),
+    'fallecido'=>count($parsed['fallecido']),
   ], JSON_UNESCAPED_UNICODE);
 
-} catch (Throwable $e) {
-  // Si había transacción abierta, rollback
-  try { if (isset($pdo)) { $pdo->rollBack(); } } catch (Throwable $e2) {}
+} catch (\Throwable $e) {
+  if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+    try { $pdo->rollBack(); } catch (\Throwable $e2) {}
+  }
   http_response_code(500);
-  echo json_encode(['ok' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+  echo json_encode(['ok'=>false,'type'=>get_class($e),'error'=>$e->getMessage()], JSON_UNESCAPED_UNICODE);
 }
 
 /* =================== Helpers =================== */
-
 function pdf_to_text_poppler(string $pdf, string $bin): array {
   if (!$bin || !is_file($bin)) return ['', 'pdftotext.exe no disponible'];
   $out = $pdf . '.txt';
@@ -164,18 +141,14 @@ function pdf_to_text_poppler(string $pdf, string $bin): array {
   $cmd  = escapeshellcmd($bin) . ' -layout -nopgbrk ' . escapeshellarg($pdf) . ' ' . escapeshellarg($out);
   $p = proc_open($cmd, $spec, $pipes);
   if (is_resource($p)) {
-    fclose($pipes[0]);
-    stream_get_contents($pipes[1]); // stdout no lo usamos
-    $err = stream_get_contents($pipes[2]);
-    fclose($pipes[1]); fclose($pipes[2]);
-    proc_close($p);
+    fclose($pipes[0]); stream_get_contents($pipes[1]); $err = stream_get_contents($pipes[2]);
+    fclose($pipes[1]); fclose($pipes[2]); proc_close($p);
     $txt = is_file($out) ? (string)@file_get_contents($out) : '';
     return [$txt, trim($err)];
   }
   return ['', 'No se pudo ejecutar pdftotext'];
 }
 
-/** Limpieza agresiva (sellos, pies, dobles espacios) */
 function normalize_text(string $t): string {
   $t = preg_replace('/B\\s*C\\s*O\\s*M\\s*\\d+\\s*T\\s*R\\s*A\\s*F/i','',$t);
   $t = preg_replace('/RESERVADO/i','',$t);
@@ -183,18 +156,14 @@ function normalize_text(string $t): string {
   $t = preg_replace('/Página\\s+\\d+\\s+de\\s+\\d+/i','', $t);
   $t = preg_replace('/\\s{2,}/',' ', $t);
   $lines = array_map('rtrim', preg_split('/\\r?\\n/', $t));
-  $lines = array_values(array_filter($lines, fn($l)=>$l!==''));
+  $lines = array_values(array_filter($lines, fn($l)=>$l!=='')); // sin líneas vacías
   return implode("\n", $lines);
 }
 
-/** Parser (multi-línea), filtrado por Comunicaciones */
 function parse_cenope(string $txt): array {
-  $outI=[]; $outA=[]; $outF=[];
-  $cat=null; $modo=null;
-
+  $outI=[]; $outA=[]; $outF=[]; $cat=null; $modo=null;
   $GRADOS='(TG|GD|GB|CY|CR|TC|MY|CT|TP|TT|ST|SM|SP|SA|SI|SG|CI|CB|VP|VS|SV|SOLD)';
-  $lines = preg_split('/\\n/', $txt);
-  $n = count($lines);
+  $lines = preg_split('/\\n/', $txt); $n = count($lines);
 
   for ($i=0; $i<$n; $i++) {
     $l = $lines[$i];
@@ -204,8 +173,7 @@ function parse_cenope(string $txt): array {
     if (!$cat || !$modo) continue;
 
     if (preg_match('/\\b'.$GRADOS.'\\b/i',$l,$gm, PREG_OFFSET_CAPTURE)) {
-      $buf = $l;
-      for ($k=1;$k<=5 && ($i+$k)<$n;$k++) $buf .= ' '.$lines[$i+$k];
+      $buf = $l; for ($k=1;$k<=5 && ($i+$k)<$n;$k++) $buf .= ' '.$lines[$i+$k];
       $buf = preg_replace('/\\s{2,}/',' ',$buf);
 
       $fecha = extrae_fecha($buf);
@@ -213,13 +181,11 @@ function parse_cenope(string $txt): array {
       $hosp  = guess_hospital(preg_split('/\\s+/',$buf));
 
       if (!preg_match('/\\b'.$GRADOS.'\\b/i',$buf,$m2, PREG_OFFSET_CAPTURE)) continue;
-      $gradoRaw = $m2[0][0];
-      $grado = strtoupper(preg_replace('/[^A-Z]/','',$gradoRaw));
+      $gradoRaw = $m2[0][0]; $grado = strtoupper(preg_replace('/[^A-Z]/','',$gradoRaw));
       $post = trim(substr($buf, $m2[0][1] + strlen($m2[0][0])));
 
-      $revCut = preg_split('/\\b(En Actividad|Retirado)\\b/i', $post, 2, PREG_SPLIT_DELIM_CAPTURE);
-      $pre = trim($revCut[0] ?? '');
-      $postRev = trim($revCut[2] ?? '');
+      $revCut  = preg_split('/\\b(En Actividad|Retirado)\\b/i', $post, 2, PREG_SPLIT_DELIM_CAPTURE);
+      $pre     = trim($revCut[0] ?? ''); $postRev = trim($revCut[2] ?? '');
 
       $destino = '';
       if ($postRev !== '' && preg_match('/-\\s*([^0-9]{2,}?)(?:\\s*\\(U\\d+\\))?/i',$postRev,$md)) $destino = trim($md[1]);
@@ -242,93 +208,52 @@ function parse_cenope(string $txt): array {
         'Habitación' => $hab,
         'Hospital' => $hosp,
       ];
-
-      if (pasaFiltroCom($row)) {
-        if ($modo==='INTERNADOS') $outI[]=$row; else $outA[]=$row;
-      }
+      if (pasaFiltroCom($row)) { if ($modo==='INTERNADOS') $outI[]=$row; else $outA[]=$row; }
     }
 
     if (preg_match('/\\bFALLECID[OA]S?\\b/i',$l)) $outF[] = trim($l);
   }
 
-  // Orden + Nro
-  $rank = [
-    'TG'=>0,'GD'=>0.1,'GB'=>0.2,'CY'=>0.5,
-    'CR'=>1,'TC'=>2,'MY'=>3,'CT'=>4,'TP'=>5,'TT'=>6,'ST'=>7,
-    'SM'=>10,'SP'=>11,'SA'=>12,'SI'=>13,'SG'=>14,'CI'=>15,'CB'=>16,
-    'VP'=>30,'VS'=>31,'SV'=>32,'SOLD'=>33
-  ];
-  $ord = function($a,$b) use($rank){
-    $ra=$rank[$a['Grado']]??999; $rb=$rank[$b['Grado']]??999;
-    return $ra===$rb ? strcmp($a['Apellido y Nombre'],$b['Apellido y Nombre']) : $ra<=>$rb;
-  };
+  $rank = ['TG'=>0,'GD'=>0.1,'GB'=>0.2,'CY'=>0.5,'CR'=>1,'TC'=>2,'MY'=>3,'CT'=>4,'TP'=>5,'TT'=>6,'ST'=>7,'SM'=>10,'SP'=>11,'SA'=>12,'SI'=>13,'SG'=>14,'CI'=>15,'CB'=>16,'VP'=>30,'VS'=>31,'SV'=>32,'SOLD'=>33];
+  $ord = function($a,$b) use($rank){ $ra=$rank[$a['Grado']]??999; $rb=$rank[$b['Grado']]??999; return $ra===$rb ? strcmp($a['Apellido y Nombre'],$b['Apellido y Nombre']) : $ra<=>$rb; };
   usort($outI,$ord); usort($outA,$ord);
   $i=1; foreach($outI as &$r){ $r['Nro']=$i++; }
 
   return ['internado'=>$outI,'alta'=>$outA,'fallecido'=>$outF];
 }
 
-/* === Filtro Comunicaciones === */
 function pasaFiltroCom(array $r): bool {
-  $cat = $r['categoria'];
-  $arma = strtoupper($r['Arma'] ?? '');
-  $dest = strtoupper($r['Unidad'] ?? '');
-  if ($cat==='OFICIALES' || $cat==='SUBOFICIALES') return (strpos($arma, 'COM') !== false);
+  $cat = $r['categoria']; $arma = strtoupper($r['Arma'] ?? ''); $dest = strtoupper($r['Unidad'] ?? '');
+  if ($cat==='OFICIALES' || $cat==='SUBOFICIALES') return (strpos($arma,'COM') !== false);
   if ($cat==='SOLDADOS VOLUNTARIOS') return esUnidadCom($dest);
   return false;
 }
 function esUnidadCom(string $dest): bool {
-  $pat = '/\\b('
-       . 'B\\s*MANT\\s*COM'
-       . '|BAT\\s*COM'
-       . '|BATALL[ÓO]N\\s+DE\\s+COM'
-       . '|BCOM'
-       . '|CA\\s*COM'
-       . '|CIA\\s*COM'
-       . '|BRIG\\s*COM'
-       . '|COMUNICACIONES\\b'
-       . ')\\b/u';
+  $pat = '/\\b(B\\s*MANT\\s*COM|BAT\\s*COM|BATALL[ÓO]N\\s+DE\\s+COM|BCOM|CA\\s*COM|CIA\\s*COM|BRIG\\s*COM|COMUNICACIONES\\b)\\b/u';
   return (bool)preg_match($pat, $dest);
 }
 
-/* === Extras parseo === */
 function extrae_fecha(string &$s): ?string {
   if (preg_match('/(\\d{1,2}[A-Za-z]{3}\\d{2}|\\d{1,2}[\\/\\-]\\d{1,2}[\\/\\-]\\d{2,4})\\b/',$s,$m,PREG_OFFSET_CAPTURE)) {
-    $pos = $m[0][1]; $len = strlen($m[0][0]);
-    $s = trim(substr($s,0,$pos).' '.substr($s,$pos+$len));
-    return $m[0][0];
-  }
-  return null;
+    $pos=$m[0][1]; $len=strlen($m[0][0]); $s = trim(substr($s,0,$pos).' '.substr($s,$pos+$len)); return $m[0][0];
+  } return null;
 }
 function extrae_hab(string &$s): ?string {
   if (preg_match('/\\b(UTI|PI|UCO|PAB|\\d+[A-Z]?)\\b/i',$s,$m,PREG_OFFSET_CAPTURE)) {
-    $pos = $m[0][1]; $len = strlen($m[0][0]);
-    $s = trim(substr($s,0,$pos).' '.substr($s,$pos+$len));
-    return $m[0][0];
-  }
-  return null;
+    $pos=$m[0][1]; $len=strlen($m[0][0]); $s = trim(substr($s,0,$pos).' '.substr($s,$pos+$len)); return $m[0][0];
+  } return null;
 }
-function map_cat(string $s): string {
-  $s = strtoupper($s);
-  if (str_starts_with($s,'OFICIA')) return 'OFICIALES';
-  if (str_starts_with($s,'SUBOFI')) return 'SUBOFICIALES';
-  return 'SOLDADOS VOLUNTARIOS';
-}
+function map_cat(string $s): string { $s=strtoupper($s); if (str_starts_with($s,'OFICIA')) return 'OFICIALES'; if (str_starts_with($s,'SUBOFI')) return 'SUBOFICIALES'; return 'SOLDADOS VOLUNTARIOS'; }
 function guess_hospital(array $cols): ?string {
   $s = strtoupper(implode(' ', array_slice($cols, -5)));
-  foreach ([
-    'CENTRAL','CAMPO DE MAYO','CORDOBA','MENDOZA','PARANA','BAHIA BLANCA','RIO GALLEGOS',
-    'SALTA','CURUZU CUATIA','COMODORO RIVADAVIA','HOSPITAL REGIONAL','SANATORIO COLEGIALES'
-  ] as $h) { if (str_contains($s, $h)) return $h; }
-  return null;
+  foreach (['CENTRAL','CAMPO DE MAYO','CORDOBA','MENDOZA','PARANA','BAHIA BLANCA','RIO GALLEGOS','SALTA','CURUZU CUATIA','COMODORO RIVADAVIA','HOSPITAL REGIONAL','SANATORIO COLEGIALES'] as $h) {
+    if (str_contains($s,$h)) return $h;
+  } return null;
 }
 function norm_date(?string $s): ?string {
   if(!$s) return null;
   if (preg_match('/^(\\d{1,2})([A-Za-z]{3})(\\d{2})$/',$s,$m)) {
-    $mm = [
-      'ENE'=>'01','JAN'=>'01','FEB'=>'02','MAR'=>'03','ABR'=>'04','APR'=>'04','MAY'=>'05',
-      'JUN'=>'06','JUL'=>'07','AGO'=>'08','AUG'=>'08','SEP'=>'09','OCT'=>'10','NOV'=>'11','DIC'=>'12','DEC'=>'12'
-    ][strtoupper($m[2])] ?? '01';
+    $mm = ['ENE'=>'01','JAN'=>'01','FEB'=>'02','MAR'=>'03','ABR'=>'04','APR'=>'04','MAY'=>'05','JUN'=>'06','JUL'=>'07','AGO'=>'08','AUG'=>'08','SEP'=>'09','OCT'=>'10','NOV'=>'11','DIC'=>'12','DEC'=>'12'][strtoupper($m[2])] ?? '01';
     return '20'.$m[3].'-'.$mm.'-'.str_pad($m[1],2,'0',STR_PAD_LEFT);
   }
   if (preg_match('/^(\\d{1,2})[\\/-](\\d{1,2})[\\/-](\\d{2,4})$/',$s,$m)) {
