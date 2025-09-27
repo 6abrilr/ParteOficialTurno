@@ -22,16 +22,14 @@ try {
         ORDER BY nombre"
     );
     $st->execute([':c'=>$cat]);
-    $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    out(array_map(function($r){
-      return [
-        'id'      => (int)$r['id'],
-        'nombre'  => $r['nombre'],
-        'estado'  => $r['estado'] ?: 'EN LINEA',
-        'novedad' => $r['novedad'] ?: '',
-        'ticket'  => $r['ticket'] ?: '',
-      ];
-    }, $rows));
+    $rows = $st->fetchAll() ?: [];
+    out(array_map(fn($r) => [
+      'id'      => (int)$r['id'],
+      'nombre'  => $r['nombre'],
+      'estado'  => $r['estado'] ?: 'EN LINEA',
+      'novedad' => $r['novedad'] ?: '',
+      'ticket'  => $r['ticket'] ?: '',
+    ], $rows));
   }
 
   if ($action === 'guardar') {

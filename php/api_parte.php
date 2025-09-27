@@ -1,54 +1,48 @@
 <?php
 // php/api_parte.php
-require_once __DIR__.'/db.php';
-
+declare(strict_types=1);
+ini_set('display_errors','0');
 header('Content-Type: application/json; charset=utf-8');
 
-$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+require_once __DIR__.'/db.php';
 
-try {
+function out($arr, int $code=200){
+  http_response_code($code);
+  echo json_encode($arr, JSON_UNESCAPED_UNICODE);
+  exit;
+}
+
+try{
+  $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+  $pdo = db(); // ← FIX: usar db(), no pdo()
+
   if ($method === 'POST') {
-    $raw = file_get_contents('php://input');
-    $data = json_decode($raw, true);
-    if (!is_array($data)) throw new Exception('JSON inválido');
+    $raw = file_get_contents('php://input') ?: '';
+    $p = $raw ? (json_decode($raw, true) ?: []) : [];
 
-    $desde = trim($data['fecha_desde'] ?? '');
-    $hasta = trim($data['fecha_hasta'] ?? '');
-    $ofi   = trim($data['oficial_turno'] ?? '');
-    $sub   = trim($data['suboficial_turno'] ?? '');
+    $fd = $p['fecha_desde']      ?? '';
+    $fh = $p['fecha_hasta']      ?? '';
+    $of = trim($p['oficial_turno']    ?? '');
+    $sf = trim($p['suboficial_turno'] ?? '');
 
-    if ($desde === '' || $hasta === '') throw new Exception('Faltan fecha_desde y/o fecha_hasta');
-    if ($ofi === '' && $sub === '') throw new Exception('Cargá al menos Oficial o Suboficial de turno');
+    if (!$fd || !$fh) out(['ok'=>false,'error'=>'Fechas requeridas'], 400);
 
-    // Normalizo a 'Y-m-d H:i:s' si vienen como datetime-local (sin TZ)
-    $norm = function(string $s): string {
-      // formatos típicos: "2025-09-24T08:00" | "2025-09-24 08:00" | "2025-09-24 08:00:00"
-      $s = str_replace('T',' ',$s);
-      if (preg_match('/^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}$/',$s)) $s .= ':00';
-      return $s;
-    };
-    $desde = $norm($desde);
-    $hasta = $norm($hasta);
+    $st = $pdo->prepare("INSERT INTO parte_encabezado (fecha_desde,fecha_hasta,oficial_turno,suboficial_turno)
+                         VALUES (:d,:h,:o,:s)");
+    $st->execute([':d'=>$fd, ':h'=>$fh, ':o'=>$of, ':s'=>$sf]);
 
-    $sql = "INSERT INTO parte_encabezado (fecha_desde, fecha_hasta, oficial_turno, suboficial_turno)
-            VALUES (?,?,?,?)";
-    $st = pdo()->prepare($sql);
-    $st->execute([$desde, $hasta, $ofi, $sub]);
-    echo json_encode(['ok'=>true, 'id'=>pdo()->lastInsertId()], JSON_UNESCAPED_UNICODE);
-    exit;
+    out(['ok'=>true, 'id'=>(int)$pdo->lastInsertId()]);
   }
 
-  // GET: devolver el último encabezado guardado (opcional, útil para precargar)
-  if ($method === 'GET') {
-    $row = pdo()->query("SELECT * FROM parte_encabezado ORDER BY id DESC LIMIT 1")->fetch();
-    echo json_encode(['ok'=>true, 'data'=>$row ?: null], JSON_UNESCAPED_UNICODE);
-    exit;
+  // Opcional: traer el último encabezado guardado
+  if ($method === 'GET' && ($_GET['action'] ?? '') === 'last') {
+    $row = $pdo->query("SELECT * FROM parte_encabezado ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    if (!$row) out(['ok'=>true,'found'=>false]);
+    out(['ok'=>true,'found'=>true,'data'=>$row]);
   }
 
-  http_response_code(405);
-  echo json_encode(['ok'=>false,'error'=>'Método no permitido'], JSON_UNESCAPED_UNICODE);
+  out(['ok'=>false,'error'=>'Método no soportado'], 405);
 
-} catch (Throwable $e) {
-  http_response_code(500);
-  echo json_encode(['ok'=>false, 'error'=>$e->getMessage()], JSON_UNESCAPED_UNICODE);
+} catch (Throwable $e){
+  out(['ok'=>false,'error'=>$e->getMessage()], 500);
 }

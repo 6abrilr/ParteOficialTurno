@@ -1,5 +1,4 @@
 // ========= Formateador REDISE → texto CCC =========
-// Normaliza "DDMMMYY" (si viene como 26SEP25, etc.)
 function toDDMMMYY(d){
   if (/^\d{2}[A-Z]{3}\d{2}$/.test(d)) return d;
   const MES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
@@ -18,8 +17,7 @@ function cleanNodo(n){
   const parts = n.split(' ');
   const head = parts.shift();
   const rest = parts.join(' ');
-  const lines = [];
-  let row = '';
+  const lines = []; let row = '';
   rest.split(' ').forEach(w=>{
     if ((row + ' ' + w).trim().length > 15) {
       if (row) { lines.push(row.trim()); row=''; }
@@ -58,7 +56,7 @@ const API_PARTE   = '../php/api_parte.php';
 const API_CENOPE  = '../php/import_cenope.php';
 const API_LTA     = '../php/import_lta_docx.php';
 const API_SIST    = '../php/api_sistemas.php';
-const API_REDISE  = '../php/api_redise.php';     // snapshots REDISE
+const API_REDISE  = '../php/api_redise.php';
 const API_GENERAR_PARTE = '../php/generar_parte.php';
 
 // ===== Helpers =====
@@ -68,6 +66,19 @@ const esc = (s) => String(s ?? '')
   .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
   .replaceAll('"','&quot;').replaceAll("'","&#039;");
 
+// ===== Reglas para habilitar "Generar Parte" =====
+let encOk = false, ltaOk = false, ceOk = false;
+const tablasGuardadas = new Set(); // catIds que ya se guardaron
+const REQUIERE_TABLAS = [2,3,4,5,6]; // categorías de sistemas
+
+function allSystemsSaved(){
+  return REQUIERE_TABLAS.every(c => tablasGuardadas.has(c));
+}
+function updateGenerateBtn(){
+  const btn = qs('btnGenerarParte');
+  if (btn) btn.disabled = !(encOk && ltaOk && ceOk && allSystemsSaved());
+}
+
 // ===== Fecha por defecto: HOY 08:00 → MAÑANA 08:00 =====
 (function setDefaultDates0800(){
   const fDesde = qs('desde'), fHasta = qs('hasta');
@@ -75,7 +86,7 @@ const esc = (s) => String(s ?? '')
 
   const now = new Date();
   const hoy0800 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0, 0);
-  const maniana0800 = new Date(hoy0800.getTime() + 24*60*60*1000);
+  const maniana0800 = new Date(hoy0800.getTime() + 86400000);
 
   const toLocal = (d) => {
     const off = d.getTimezoneOffset()*60000;
@@ -85,20 +96,19 @@ const esc = (s) => String(s ?? '')
   if (!fDesde.value) fDesde.value = toLocal(hoy0800);
   if (!fHasta.value) fHasta.value = toLocal(maniana0800);
 
-  // ← AGREGADO: sincroniza los campos del generador si están vacíos
   if (qs('p_desde') && !qs('p_desde').value) qs('p_desde').value = toLocal(hoy0800);
   if (qs('p_hasta') && !qs('p_hasta').value) qs('p_hasta').value = toLocal(maniana0800);
   if (qs('p_oficial') && !qs('p_oficial').value) qs('p_oficial').value = qs('oficial')?.value || '';
   if (qs('p_subof')   && !qs('p_subof').value)   qs('p_subof').value   = qs('suboficial')?.value || '';
 
-  // ← AGREGADO: si editás el encabezado, reflejar abajo solo si está vacío
+  // reflejo solo si están vacíos los de abajo
   qs('desde')?.addEventListener('change', () => { if (!qs('p_desde')?.value) qs('p_desde').value = qs('desde').value; });
   qs('hasta')?.addEventListener('change', () => { if (!qs('p_hasta')?.value) qs('p_hasta').value = qs('hasta').value; });
-  qs('oficial')?.addEventListener('input', () => { if (!qs('p_oficial')?.value) qs('p_oficial').value = qs('oficial').value; });
-  qs('suboficial')?.addEventListener('input', () => { if (!qs('p_subof')?.value) qs('p_subof').value = qs('suboficial').value; });
+  qs('oficial')?.addEventListener('input',  () => { if (!qs('p_oficial')?.value) qs('p_oficial').value = qs('oficial').value; });
+  qs('suboficial')?.addEventListener('input',()=> { if (!qs('p_subof')?.value)   qs('p_subof').value   = qs('suboficial').value; });
 })();
 
-// ===== Guardar encabezado (fechas + firmas) =====
+// ===== Guardar encabezado =====
 qs('btnGuardarEnc')?.addEventListener('click', async ()=>{
   const payload = {
     fecha_desde: qs('desde').value,
@@ -110,27 +120,22 @@ qs('btnGuardarEnc')?.addEventListener('click', async ()=>{
     const r = await fetch(API_PARTE,{method:'POST', body: JSON.stringify(payload)});
     const data = await r.json();
     if (!data.ok) throw new Error(data.error||'No se pudo guardar');
-    const a = qs('linkParte');
-    if (a) {
-      a.href = `parte.php?desde=${encodeURIComponent(payload.fecha_desde)}&hasta=${encodeURIComponent(payload.fecha_hasta)}`;
-      a.classList.remove('d-none');
-    }
+    encOk = true;
+    updateGenerateBtn();
     alert('Encabezado guardado ✔');
   }catch(err){
     alert('Error al guardar encabezado: ' + err.message);
   }
 });
 
-// ===== Novedades: cargar pendientes (oculta resueltas) =====
+// ===== Novedades pendientes (solo visual) =====
 async function cargarPendientes(){
   if (!qs('tblNovedades')) return;
   try{
     const r = await fetch(`${API_NOV}?action=lista`);
-    const raw = await r.text();      // robusto: primero texto
+    const raw = await r.text();
     let data;
-    try { data = JSON.parse(raw); }
-    catch(e){ console.error('API_NOV devolvió (no JSON):\n', raw); return; }
-
+    try { data = JSON.parse(raw); } catch{ console.error('API_NOV no JSON:\n', raw); return; }
     const tb = qs('tblNovedades').querySelector('tbody');
     tb.innerHTML = '';
     data.forEach(n=>{
@@ -148,27 +153,22 @@ async function cargarPendientes(){
     });
     tb.querySelectorAll('[data-resolver]').forEach(b=>{
       b.onclick = async ()=>{
-        await fetch(`${API_NOV}?action=resolver`,{
-          method:'POST', body: JSON.stringify({id:+b.dataset.resolver})
-        });
+        await fetch(`${API_NOV}?action=resolver`,{method:'POST', body: JSON.stringify({id:+b.dataset.resolver})});
         cargarPendientes();
       };
     });
     const ts = qs('ts');
     if (ts) ts.textContent = 'Actualizado: ' + new Date().toLocaleString('es-AR');
-  }catch(e){
-    console.error(e);
-  }
+  }catch(e){ console.error(e); }
 }
 cargarPendientes();
 
-// ===== Form de alta/edición de novedad =====
+// ===== CRUD Novedad (form) =====
 qs('btnNuevo')?.addEventListener('click', ()=>{
   ['id','titulo','descripcion','servicio','ticket','unidad_txt','usuario'].forEach(i=>{ if(qs(i)) qs(i).value=''; });
   if (qs('categoria_id')) qs('categoria_id').value = 1;
   if (qs('prioridad'))    qs('prioridad').value    = 'MEDIA';
 });
-
 qs('frmNovedad')?.addEventListener('submit', async (e)=>{
   e.preventDefault();
   const pay = {
@@ -187,79 +187,6 @@ qs('frmNovedad')?.addEventListener('submit', async (e)=>{
   cargarPendientes();
   qs('btnNuevo')?.click();
 });
-
-// ===== Generar / Abrir Parte =====
-qs('frmParte')?.addEventListener('submit', (e)=>{
-  e.preventDefault();
-  const d = qs('desde').value;
-  const h = qs('hasta').value;
-  const a = qs('linkParte');
-  if (a) {
-    a.href = `parte.php?desde=${encodeURIComponent(d)}&hasta=${encodeURIComponent(h)}`;
-    a.classList.remove('d-none');
-    a.click();
-  }
-});
-
-// ==========================
-//   IMPORTADOR CENOPE (PDF)
-// ==========================
-qs('btnPrevCenope')?.addEventListener('click', async ()=>{
-  const f = qs('pdfCenope')?.files?.[0];
-  if(!f) return alert('Elegí el PDF del CENOPE');
-  const fd = new FormData(); fd.append('pdf', f); fd.append('dry','1');
-  if (qs('cenopeInfo')) qs('cenopeInfo').textContent = 'Procesando PDF (previsualización)...';
-  try{
-    const r = await fetch(API_CENOPE,{method:'POST', body: fd});
-    const data = await r.json();
-    if(!data.ok) throw new Error(data.error||'Error al procesar');
-    if (qs('cenopeInfo')) qs('cenopeInfo').textContent =
-      `Internados: ${data.internado.length} | Altas: ${data.alta.length} | Fallecidos: ${data.fallecido.length}`;
-    const btn = qs('btnImpCenope'); if (btn) btn.disabled = false;
-    renderPreviewCenope(data);
-  }catch(err){
-    if (qs('cenopeInfo')) qs('cenopeInfo').textContent = 'Error: '+ err.message;
-  }
-});
-
-qs('btnImpCenope')?.addEventListener('click', async ()=>{
-  const f = qs('pdfCenope')?.files?.[0];
-  if(!f) return;
-  const fd = new FormData(); fd.append('pdf', f); fd.append('dry','0');
-  if (qs('cenopeInfo')) qs('cenopeInfo').textContent = 'Importando a la base...';
-  try{
-    const r = await fetch(API_CENOPE,{method:'POST', body: fd});
-    const data = await r.json();
-    if(!data.ok) throw new Error(data.error||'Error al importar');
-    if (qs('cenopeInfo')) qs('cenopeInfo').textContent =
-      `Importado. Internados: ${data.internado} | Altas: ${data.alta} | Fallecidos: ${data.fallecido}`;
-  }catch(err){
-    if (qs('cenopeInfo')) qs('cenopeInfo').textContent = 'Error: '+ err.message;
-  }
-});
-
-// --- CENOPE: render de la previsualización (global) ---
-window.renderPreviewCenope = function renderPreviewCenope(data){
-  const div = qs('previewTables'); if(!div) return;
-  const mk = (title, rows)=>{
-    if(!rows || !rows.length) return `<h6 class='mt-2'>${esc(title)}</h6><div class='text-muted'>SIN NOVEDAD</div>`;
-    const head = `<thead><tr><th>Nro</th><th>Grado</th><th>Apellido y Nombre</th><th>Arma</th><th>Unidad/Destino</th><th>Fecha</th><th>Habitación</th><th>Hospital</th></tr></thead>`;
-    const body = rows.slice(0,10).map(r=>`<tr>
-      <td>${esc(r.Nro??'')}</td>
-      <td>${esc(r.Grado??'')}</td>
-      <td>${esc(r['Apellido y Nombre']??'')}</td>
-      <td>${esc(r.Arma??'')}</td>
-      <td>${esc(r.Unidad??'')}</td>
-      <td>${esc(r.Fecha??'')}</td>
-      <td>${esc(r['Habitación']??'')}</td>
-      <td>${esc(r.Hospital??'')}</td>
-    </tr>`).join('');
-    return `<h6 class='mt-2'>${esc(title)}</h6><div class='table-responsive'><table class='table table-sm table-bordered'>${head}<tbody>${body}</tbody></table></div>`;
-  };
-  div.innerHTML = mk('INTERNADOS (muestra 10)', data.internado)
-                + mk('ALTAS (muestra 10)', data.alta)
-                + mk('FALLECIDOS (muestra 10)', data.fallecido);
-};
 
 // ============================
 //   ESTADOS DE SISTEMAS (UI)
@@ -284,10 +211,9 @@ async function cargarSistemaTabla(divId, catId){
       <td><input class="form-control form-control-sm nov" value="${esc(x.novedad??'')}" placeholder="Detalle (opcional)"></td>
       <td><input class="form-control form-control-sm tic" value="${esc(x.ticket??'')}" placeholder="GLPI / MM / ..."></td>
     </tr>`).join('');
-
     div.innerHTML = `<div class="table-responsive"><table class="table table-sm align-middle">${head}<tbody>${body}</tbody></table></div>`;
 
-    // Guardado automático
+    // Autoguardado por cambio (opcional)
     div.querySelectorAll('tr[data-id]').forEach(tr=>{
       const id = +tr.dataset.id;
       const sel = tr.querySelector('.estado');
@@ -301,16 +227,39 @@ async function cargarSistemaTabla(divId, catId){
       };
       sel.onchange = save; nov.onchange = save; tic.onchange = save;
     });
-  }catch(e){
-    console.error(e);
-  }
+  }catch(e){ console.error(e); }
 }
-
 cargarSistemaTabla('tblServ',2);
 cargarSistemaTabla('tblIsp',3);
 cargarSistemaTabla('tblSitelpar',4);
 cargarSistemaTabla('tblDC',5);
 cargarSistemaTabla('tblSITM2',6);
+
+// --- Guardar por tabla (botones explícitos) ---
+async function guardarTabla(divId, catId){
+  const div = qs(divId); if(!div) return;
+  const rows = Array.from(div.querySelectorAll('tr[data-id]'));
+  for (const tr of rows){
+    const id  = +tr.dataset.id;
+    const sel = tr.querySelector('.estado');
+    const nov = tr.querySelector('.nov');
+    const tic = tr.querySelector('.tic');
+    await fetch(`${API_SIST}?action=guardar`,{
+      method:'POST',
+      body: JSON.stringify({id, estado: sel.value, novedad: (nov.value||'').trim(), ticket: (tic.value||'').trim()})
+    });
+  }
+  tablasGuardadas.add(catId);
+  updateGenerateBtn();
+  alert('Tabla guardada ✔');
+}
+
+// Botones de guardar por tabla (asegurate de que existan en el HTML)
+qs('btnGuardarServ')    ?.addEventListener('click', ()=> guardarTabla('tblServ',2));
+qs('btnGuardarIsp')     ?.addEventListener('click', ()=> guardarTabla('tblIsp',3));
+qs('btnGuardarSitelpar')?.addEventListener('click', ()=> guardarTabla('tblSitelpar',4));
+qs('btnGuardarDC')      ?.addEventListener('click', ()=> guardarTabla('tblDC',5));
+qs('btnGuardarSITM2')   ?.addEventListener('click', ()=> guardarTabla('tblSITM2',6));
 
 // ===== Helpers (LTA / REDISE) =====
 function turnoHoyDDMMMYY(){
@@ -326,10 +275,9 @@ function applyRowEstado(tr, estado){
 }
 function valueOrEmpty(el){ return (el?.textContent ?? '').trim(); }
 
-// ======== Snapshots/Comparación ========
+// ===== Snapshots REDISE (para vista previa LTA) =====
 function normNodo(n){ return String(n||'').toUpperCase().replace(/\s+/g,' ').trim(); }
 function normText(s){ return String(s||'').toUpperCase().replace(/\s+/g,' ').trim(); }
-
 function diffSnapshots(prevRows, currRows){
   const byKey = rows => {
     const map = new Map();
@@ -339,35 +287,28 @@ function diffSnapshots(prevRows, currRows){
     });
     return map;
   };
-
-  const A = byKey(prevRows||[]);
-  const B = byKey(currRows||[]);
+  const A = byKey(prevRows||[]); const B = byKey(currRows||[]);
   const result = [];
-
   B.forEach((curr, key)=>{
     const prev = A.get(key);
-    if (!prev) {
-      result.push({...curr, estado:'NUEVA'});
-    } else {
+    if (!prev) result.push({...curr, estado:'NUEVA'});
+    else {
       const changed =
-        normText(curr.novedad)  !== normText(prev.novedad) ||
-        normText(curr.ticket)   !== normText(prev.ticket) ||
-        normText(curr.desde)    !== normText(prev.desde);
+        normText(curr.novedad)!==normText(prev.novedad) ||
+        normText(curr.ticket)!==normText(prev.ticket) ||
+        normText(curr.desde)!==normText(prev.desde);
       result.push({...curr, estado: changed ? 'ACTUALIZADA' : (curr.estado || 'ACTUALIZADA')});
       A.delete(key);
     }
   });
-
   A.forEach(prev=>{
     result.push({
       nodo: prev.nodo, desde: prev.desde, novedad: prev.novedad,
       fecha: turnoHoyDDMMMYY(), servicio: prev.servicio, ticket: prev.ticket, estado:'RESUELTA'
     });
   });
-
   return result;
 }
-
 async function guardarSnapshotRedise(rows){
   const turno = turnoHoyDDMMMYY();
   const texto = rediseToTextoCCC(rows);
@@ -379,7 +320,6 @@ async function guardarSnapshotRedise(rows){
   if (!j.ok) throw new Error(j.error||'No se pudo guardar snapshot');
   return j;
 }
-
 async function cargarUltimoSnapshot(){
   const r = await fetch(`${API_REDISE}?action=last`);
   const j = await r.json();
@@ -387,13 +327,10 @@ async function cargarUltimoSnapshot(){
   return j.found ? j.snapshot : null;
 }
 
-// ===== LTA – Render editable con pintado + comparación =====
+// ===== LTA – Render editable + comparación =====
 function renderPreviewLTA(rows){
   const div = qs('ltaPreview'); if(!div) return;
-  if(!rows || !rows.length){
-    div.innerHTML = '<div class="text-muted">SIN NOVEDAD</div>';
-    return;
-  }
+  if(!rows || !rows.length){ div.innerHTML = '<div class="text-muted">SIN NOVEDAD</div>'; return; }
   const hoy = turnoHoyDDMMMYY();
   (async ()=>{
     try{
@@ -409,8 +346,6 @@ function renderPreviewLTA(rows){
     }
   })();
 }
-
-// Dibuja tabla LTA
 function renderLtaTabla(rows, hoy){
   const div = qs('ltaPreview'); if(!div) return;
   const head = `
@@ -490,12 +425,9 @@ function renderLtaTabla(rows, hoy){
       const data = ltaLeerTablaActual();
       await guardarSnapshotRedise(data);
       alert('REDISE guardado para el turno ' + turnoHoyDDMMMYY() + ' ✔');
-    }catch(err){
-      alert('No se pudo guardar: ' + err.message);
-    }
+    }catch(err){ alert('No se pudo guardar: ' + err.message); }
   });
 }
-
 function ltaLeerTablaActual(){
   const tbl = qs('tblLTA'); if(!tbl) return [];
   return Array.from(tbl.querySelectorAll('tbody tr')).map(tr=>({
@@ -514,14 +446,23 @@ function toCSV(rows){
     s = String(s ?? '');
     return /[",\n]/.test(s) ? `"${s.replaceAll('"','""')}"` : s;
   };
-  const head = cols.join(',');
-  const body = rows.map(r => cols.map(c => escCSV(r[c])).join(',')).join('\n');
+  const head = cols.join(','); const body = rows.map(r => cols.map(c => escCSV(r[c])).join(',')).join('\n');
   return head + '\n' + body;
 }
 
 // ==========================
-//   IMPORTADOR LTA (DOCX/PDF)
+//   IMPORTADORES
 // ==========================
+qs('docxLta')?.addEventListener('change', ()=>{
+  ltaOk = !!qs('docxLta').files?.length;
+  if (qs('p_lta')) qs('p_lta').files = qs('docxLta').files;
+  updateGenerateBtn();
+});
+qs('pdfCenope')?.addEventListener('change', ()=>{
+  ceOk = !!qs('pdfCenope').files?.length;
+  if (qs('p_cenope')) qs('p_cenope').files = qs('pdfCenope').files;
+  updateGenerateBtn();
+});
 qs('btnPrevLTA')?.addEventListener('click', async ()=>{
   const f = qs('docxLta')?.files?.[0];
   if(!f) return alert('Elegí el DOCX o PDF del LTA');
@@ -532,18 +473,14 @@ qs('btnPrevLTA')?.addEventListener('click', async ()=>{
     const data = await r.json();
     if(!data.ok) throw new Error(data.error||'Error al procesar');
     renderPreviewLTA(data.redise || []);
-    qs('ltaInfo').textContent =
-      `Filas REDISE: ${(data.redise||[]).length}` + (data._src ? `  [${data._src}]` : '');
-    qs('btnImpLTA').disabled = false;
+    qs('ltaInfo').textContent = `Filas REDISE: ${(data.redise||[]).length}` + (data._src ? `  [${data._src}]` : '');
   }catch(err){
     qs('ltaInfo').textContent = 'Error: '+ err.message;
     qs('ltaPreview').innerHTML = '';
   }
 });
-
 qs('btnImpLTA')?.addEventListener('click', async ()=>{
-  const f = qs('docxLta')?.files?.[0];
-  if(!f) return;
+  const f = qs('docxLta')?.files?.[0]; if(!f) return;
   const fd = new FormData(); fd.append('file', f); fd.append('dry','0');
   qs('ltaInfo').textContent = 'Importando...';
   try{
@@ -551,17 +488,43 @@ qs('btnImpLTA')?.addEventListener('click', async ()=>{
     const data = await r.json();
     if(!data.ok) throw new Error(data.error||'Error al importar');
     qs('ltaInfo').textContent = `Importado ✔  Filas REDISE: ${(data.redise||[]).length}`;
-  }catch(err){
-    qs('ltaInfo').textContent = 'Error: '+ err.message;
-  }
+  }catch(err){ qs('ltaInfo').textContent = 'Error: '+ err.message; }
 });
 
-// ===== Generar Parte del Arma (LTA + CENOPE) =====
+qs('btnPrevCenope')?.addEventListener('click', async ()=>{
+  const f = qs('pdfCenope')?.files?.[0];
+  if(!f) return alert('Elegí el PDF del CENOPE');
+  const fd = new FormData(); fd.append('pdf', f); fd.append('dry','1');
+  if (qs('cenopeInfo')) qs('cenopeInfo').textContent = 'Procesando PDF (previsualización)...';
+  try{
+    const r = await fetch(API_CENOPE,{method:'POST', body: fd});
+    const data = await r.json();
+    if(!data.ok) throw new Error(data.error||'Error al procesar');
+    if (qs('cenopeInfo')) qs('cenopeInfo').textContent =
+      `Internados: ${data.internado.length} | Altas: ${data.alta.length} | Fallecidos: ${data.fallecido.length}`;
+    renderPreviewCenope(data);
+  }catch(err){ if (qs('cenopeInfo')) qs('cenopeInfo').textContent = 'Error: '+ err.message; }
+});
+qs('btnImpCenope')?.addEventListener('click', async ()=>{
+  const f = qs('pdfCenope')?.files?.[0]; if(!f) return;
+  const fd = new FormData(); fd.append('pdf', f); fd.append('dry','0');
+  if (qs('cenopeInfo')) qs('cenopeInfo').textContent = 'Importando a la base...';
+  try{
+    const r = await fetch(API_CENOPE,{method:'POST', body: fd});
+    const data = await r.json();
+    if(!data.ok) throw new Error(data.error||'Error al importar');
+    if (qs('cenopeInfo')) qs('cenopeInfo').textContent =
+      `Importado. Internados: ${data.internado} | Altas: ${data.alta} | Fallecidos: ${data.fallecido}`;
+  }catch(err){ if (qs('cenopeInfo')) qs('cenopeInfo').textContent = 'Error: '+ err.message; }
+});
+
+// ===== Generar Parte (solo al final) =====
 qs('btnGenerarParte')?.addEventListener('click', async ()=>{
   const fd = new FormData();
   const lta = qs('p_lta')?.files?.[0];
   const ce  = qs('p_cenope')?.files?.[0];
   if(!lta || !ce) return alert('Subí LTA y CENOPE');
+
   fd.append('lta', lta);
   fd.append('cenope', ce);
   fd.append('desde', qs('p_desde')?.value || qs('desde')?.value || '');
@@ -576,11 +539,18 @@ qs('btnGenerarParte')?.addEventListener('click', async ()=>{
     let data;
     try{ data = JSON.parse(raw); }catch{ throw new Error('Respuesta no JSON: '+raw); }
     if(!data.ok) throw new Error(data.error||'No se pudo generar');
+
     const aH = qs('lnkParteHTML'), aP = qs('lnkPartePDF');
     if (aH) { aH.href = data.html; aH.classList.remove('d-none'); }
-    if (aP) { aP.href = data.pdf;  aP.classList.remove('d-none'); }
+    if (aP) {
+      if (data.pdf) { aP.href = data.pdf; aP.classList.remove('d-none'); }
+      else { aP.classList.add('d-none'); }
+    }
     qs('parteInfo').textContent = `Parte generado ✔ – Turno ${data.turno}`;
   }catch(err){
     qs('parteInfo').textContent = 'Error: ' + err.message;
   }
 });
+
+// Inicializar estado del botón final
+updateGenerateBtn();

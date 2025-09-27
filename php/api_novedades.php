@@ -13,13 +13,14 @@ function json_out($arr, int $code=200){
 }
 
 try {
-  $pdo = db(); // PDO con ERRMODE_EXCEPTION
+  $pdo = db();
 
   $action = $_GET['action'] ?? '';
   $raw = file_get_contents('php://input') ?: '';
   $pay = $raw ? (json_decode($raw, true) ?: []) : [];
 
   if ($action === 'lista') {
+    // Solo las no RESUELTAS
     $sql = "SELECT n.id,
                    n.fecha_inicio,
                    n.titulo,
@@ -32,18 +33,16 @@ try {
             LEFT JOIN unidad    u ON u.id = n.unidad_id
             WHERE n.estado <> 'RESUELTO'
             ORDER BY n.fecha_inicio DESC";
-    $rows = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    json_out(array_map(function($r){
-      return [
-        'id'           => (int)$r['id'],
-        'fecha_inicio' => $r['fecha_inicio'],
-        'titulo'       => $r['titulo'],
-        'descripcion'  => $r['descripcion'],
-        'categoria'    => $r['categoria'],
-        'unidad'       => $r['unidad'],
-        'prioridad'    => $r['prioridad'],
-      ];
-    }, $rows));
+    $rows = $pdo->query($sql)->fetchAll() ?: [];
+    json_out(array_map(fn($r) => [
+      'id'           => (int)$r['id'],
+      'fecha_inicio' => $r['fecha_inicio'],
+      'titulo'       => $r['titulo'],
+      'descripcion'  => $r['descripcion'],
+      'categoria'    => $r['categoria'],
+      'unidad'       => $r['unidad'],
+      'prioridad'    => $r['prioridad'],
+    ], $rows));
   }
 
   if ($action === 'crear') {
@@ -57,7 +56,7 @@ try {
       ':titulo'       => trim($pay['titulo'] ?? ''),
       ':descripcion'  => trim($pay['descripcion'] ?? ''),
       ':categoria_id' => (int)($pay['categoria_id'] ?? 1),
-      ':unidad_id'    => ($pay['unidad_id'] ?? null) !== null ? (int)$pay['unidad_id'] : null,
+      ':unidad_id'    => array_key_exists('unidad_id',$pay) && $pay['unidad_id']!==null ? (int)$pay['unidad_id'] : null,
       ':servicio'     => trim($pay['servicio'] ?? ''),
       ':ticket'       => trim($pay['ticket'] ?? ''),
       ':prioridad'    => in_array($pay['prioridad'] ?? 'MEDIA', ['BAJA','MEDIA','ALTA'], true) ? $pay['prioridad'] : 'MEDIA',
@@ -82,7 +81,7 @@ try {
       ':titulo'       => trim($pay['titulo'] ?? ''),
       ':descripcion'  => trim($pay['descripcion'] ?? ''),
       ':categoria_id' => (int)($pay['categoria_id'] ?? 1),
-      ':unidad_id'    => ($pay['unidad_id'] ?? null) !== null ? (int)$pay['unidad_id'] : null,
+      ':unidad_id'    => array_key_exists('unidad_id',$pay) && $pay['unidad_id']!==null ? (int)$pay['unidad_id'] : null,
       ':servicio'     => trim($pay['servicio'] ?? ''),
       ':ticket'       => trim($pay['ticket'] ?? ''),
       ':prioridad'    => in_array($pay['prioridad'] ?? 'MEDIA', ['BAJA','MEDIA','ALTA'], true) ? $pay['prioridad'] : 'MEDIA',

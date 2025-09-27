@@ -8,17 +8,19 @@ $desde = $_GET['desde'] ?? '';
 $hasta = $_GET['hasta'] ?? '';
 if (!$desde || !$hasta) { http_response_code(400); die('Faltan parámetros desde/hasta'); }
 
-$pdo = pdo();
+// FIX: usar db() (devuelve PDO)
+$pdo = db();
+$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
-// Encabezado (último)
+// Encabezado (último) – si no hubiera, usa los params recibidos
 $enc = $pdo->query("SELECT * FROM parte_encabezado ORDER BY id DESC LIMIT 1")->fetch() ?: [
-  'oficial_turno'   => '',
-  'suboficial_turno'=> '',
-  'fecha_desde'     => $desde,
-  'fecha_hasta'     => $hasta,
+  'oficial_turno'    => '',
+  'suboficial_turno' => '',
+  'fecha_desde'      => $desde,
+  'fecha_hasta'      => $hasta,
 ];
 
-// Eventos
+// Eventos dentro del rango
 $sqlEvt = "SELECT e.*, n.titulo, n.descripcion, n.servicio, n.ticket, n.fecha_inicio,
                   n.categoria_id, c.nombre AS categoria
            FROM novedad_evento e
@@ -30,7 +32,7 @@ $st = $pdo->prepare($sqlEvt);
 $st->execute([$desde, $hasta]);
 $eventos = $st->fetchAll();
 
-// Pendientes al cierre
+// Pendientes al cierre (todo lo no resuelto)
 $sqlPend = "SELECT n.*, c.nombre AS categoria
             FROM novedad n
             JOIN categoria c ON c.id = n.categoria_id
@@ -38,7 +40,7 @@ $sqlPend = "SELECT n.*, c.nombre AS categoria
             ORDER BY n.prioridad DESC, n.fecha_inicio DESC";
 $pendientes = $pdo->query($sqlPend)->fetchAll();
 
-// Personal CENOPE (soporta apellidoNombre / apellido_nombre)
+// Personal CENOPE
 function col($r, $a, $b=null) { return isset($r[$a]) ? $r[$a] : ($b && isset($r[$b]) ? $r[$b] : null); }
 
 $ordenGrado = "FIELD(grado,'TG','GD','GB','CY','CR','TC','MY','CT','TP','TT','ST','SM','SP','SA','SI','SG','CI','CB','VP','VS','SV','SOLD')";
@@ -50,7 +52,7 @@ function groupByKey(array $rows, string $key): array { $g=[]; foreach($rows as $
 $piG = groupByKey($pi, 'categoria');
 $paG = groupByKey($pa, 'categoria');
 
-// Estados de Sistemas
+// Estados de Sistemas (sistema_estado)
 $estados = $pdo->query("SELECT * FROM sistema_estado ORDER BY categoria_id, nombre")->fetchAll();
 $estGrp  = [];
 foreach ($estados as $r) { $estGrp[$r['categoria_id']][] = $r; }
