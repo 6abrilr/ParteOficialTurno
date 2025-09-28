@@ -74,8 +74,12 @@ let sistemasConfirmado = false;
 function refreshGenerarEnabled(){
   const btn = qs('btnGenerarParte');
   if (!btn) return;
-  btn.disabled = !(encabezadoGuardado && archivosCargados && sistemasConfirmado);
+  const ok = (encabezadoGuardado && archivosCargados && sistemasConfirmado);
+  console.log('[GATE] encab=',encabezadoGuardado,' files=',archivosCargados,' sist=',sistemasConfirmado,' => habilitado=',ok);
+  btn.disabled = !ok;
 }
+// recalculo inicial (por si hay valores precargados)
+refreshGenerarEnabled();
 
 // ===== Fecha por defecto: HOY 08:00 → MAÑANA 08:00 (campos del generador) =====
 (function setDefaultDates0800(){
@@ -146,6 +150,9 @@ qs('btnImpLTA')?.addEventListener('click', async ()=>{
     const data = await r.json();
     if(!data.ok) throw new Error(data.error||'Error al importar');
     qs('ltaInfo') && (qs('ltaInfo').textContent = `Importado ✔  Filas REDISE: ${(data.redise||[]).length}`);
+    // marcar archivos listos y recalcular gate
+    archivosCargados = (qs('p_lta')?.files?.length>0) && (qs('p_cenope')?.files?.length>0);
+    refreshGenerarEnabled();
   }catch(err){
     qs('ltaInfo') && (qs('ltaInfo').textContent = 'Error: '+ err.message);
   }
@@ -156,34 +163,82 @@ qs('btnImpLTA')?.addEventListener('click', async ()=>{
 // ==========================
 qs('btnPrevCenope')?.addEventListener('click', async ()=>{
   const f = qs('p_cenope')?.files?.[0];
-  if(!f) return alert('Elegí el PDF del CENOPE');
-  const fd = new FormData(); fd.append('pdf', f); fd.append('dry','1');
-  qs('cenopeInfo') && (qs('cenopeInfo').textContent = 'Procesando PDF (previsualización)...');
+  if (!f) return alert('Elegí el PDF del CENOPE');
+
+  const info = qs('cenopeInfo');
+  const fd = new FormData();
+  fd.append('pdf', f);
+  fd.append('dry', '1');
+  fd.append('debug', '1'); // pedir trazas
+
+  if (info) info.textContent = 'Procesando PDF (previsualización)...';
+
   try{
-    const r = await fetch(API_CENOPE,{method:'POST', body: fd});
-    const data = await r.json();
-    if(!data.ok) throw new Error(data.error||'Error al procesar');
-    qs('cenopeInfo') && (qs('cenopeInfo').textContent =
-      `Internados: ${data.internado.length} | Altas: ${data.alta.length} | Fallecidos: ${data.fallecido.length}`);
+    const r   = await fetch(API_CENOPE, { method:'POST', body: fd });
+    const raw = await r.text();
+    let data;
+    try { data = JSON.parse(raw); }
+    catch { throw new Error('Respuesta no JSON en previsualización: ' + raw.slice(0,400)); }
+
+    if (!data.ok) {
+      const dbg = data.debug ? '\n\n' + data.debug : '';
+      throw new Error((data.error || 'Error al procesar') + dbg);
+    }
+
+    if (info) info.textContent =
+      `Internados: ${data.internado.length} | Altas: ${data.alta.length} | Fallecidos: ${data.fallecido.length}`;
+
     const btn = qs('btnImpCenope'); if (btn) btn.disabled = false;
     renderPreviewCenope(data);
+
   }catch(err){
-    qs('cenopeInfo') && (qs('cenopeInfo').textContent = 'Error: '+ err.message);
+    console.error('[CENOPE] Previsualizar falló:', err);
+    if (info) info.textContent = 'Error: ' + err.message;
   }
 });
+
 qs('btnImpCenope')?.addEventListener('click', async ()=>{
+  console.log('[CENOPE] Guardar: click');
   const f = qs('p_cenope')?.files?.[0];
-  if(!f) return;
-  const fd = new FormData(); fd.append('pdf', f); fd.append('dry','0');
-  qs('cenopeInfo') && (qs('cenopeInfo').textContent = 'Importando a la base...');
+  if (!f) return alert('Elegí el PDF del CENOPE');
+
+  const info = qs('cenopeInfo');
+  const fd = new FormData();
+  fd.append('pdf', f);
+  fd.append('dry', '0');     // guardar
+  fd.append('debug', '1');   // pedir trazas del server
+
+  if (info) info.textContent = 'Importando a la base...';
+
   try{
-    const r = await fetch(API_CENOPE,{method:'POST', body: fd});
-    const data = await r.json();
-    if(!data.ok) throw new Error(data.error||'Error al importar');
-    qs('cenopeInfo') && (qs('cenopeInfo').textContent =
-      `Importado. Internados: ${data.internado} | Altas: ${data.alta} | Fallecidos: ${data.fallecido}`);
+    const r   = await fetch(API_CENOPE, { method:'POST', body: fd });
+    const raw = await r.text();
+    console.log('[CENOPE] HTTP', r.status, 'bytes=', raw.length);
+
+    let data;
+    try { data = JSON.parse(raw); }
+    catch {
+      console.error('[CENOPE] Respuesta NO-JSON (raw):\n', raw);
+      throw new Error('Respuesta no JSON: ' + raw.slice(0,400));
+    }
+
+    if (!data.ok) {
+      console.error('[CENOPE] Error servidor:', data);
+      const dbg = data.debug ? '\n\n' + data.debug : '';
+      throw new Error((data.error || 'Error al importar') + dbg);
+    }
+
+    if (info) info.textContent =
+      `Importado. Internados: ${data.internado} | Altas: ${data.alta} | Fallecidos: ${data.fallecido}`;
+
+    alert('CENOPE importado correctamente.');
+    // marcar archivos listos y recalcular gate
+    archivosCargados = (qs('p_lta')?.files?.length>0) && (qs('p_cenope')?.files?.length>0);
+    refreshGenerarEnabled();
   }catch(err){
-    qs('cenopeInfo') && (qs('cenopeInfo').textContent = 'Error: '+ err.message);
+    console.error('[CENOPE] Guardar falló:', err);
+    if (info) info.textContent = 'Error: ' + err.message;
+    alert('Importar CENOPE falló:\n' + err.message);
   }
 });
 

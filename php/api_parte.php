@@ -1,48 +1,45 @@
 <?php
-// php/api_parte.php
 declare(strict_types=1);
-ini_set('display_errors','0');
+require_once __DIR__ . '/db.php';
+
 header('Content-Type: application/json; charset=utf-8');
 
-require_once __DIR__.'/db.php';
+try {
+  $raw = file_get_contents('php://input') ?: '';
+  $j = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
 
-function out($arr, int $code=200){
-  http_response_code($code);
-  echo json_encode($arr, JSON_UNESCAPED_UNICODE);
-  exit;
-}
+  $fd = trim((string)($j['fecha_desde'] ?? ''));
+  $fh = trim((string)($j['fecha_hasta'] ?? ''));
+  $of = trim((string)($j['oficial_turno'] ?? ''));
+  $su = trim((string)($j['suboficial_turno'] ?? ''));
 
-try{
-  $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-  $pdo = db(); // ← FIX: usar db(), no pdo()
+  if ($fd === '' || $fh === '') throw new InvalidArgumentException('Falta fecha_desde/fecha_hasta');
+  if ($of === '' || $su === '') throw new InvalidArgumentException('Falta oficial/suboficial de turno');
 
-  if ($method === 'POST') {
-    $raw = file_get_contents('php://input') ?: '';
-    $p = $raw ? (json_decode($raw, true) ?: []) : [];
+  // Normalizar a 'Y-m-d H:i:s' (viene como local datetime en el input)
+  $toDt = function(string $s): string {
+    $dt = new DateTime($s);
+    return $dt->format('Y-m-d H:i:s');
+  };
+  $fdSql = $toDt($fd);
+  $fhSql = $toDt($fh);
 
-    $fd = $p['fecha_desde']      ?? '';
-    $fh = $p['fecha_hasta']      ?? '';
-    $of = trim($p['oficial_turno']    ?? '');
-    $sf = trim($p['suboficial_turno'] ?? '');
+  $pdo = db();
+  $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    if (!$fd || !$fh) out(['ok'=>false,'error'=>'Fechas requeridas'], 400);
+  // UPSERT por la UNIQUE (fecha_desde, fecha_hasta)
+  $sql = "
+    INSERT INTO parte_encabezado (fecha_desde, fecha_hasta, oficial_turno, suboficial_turno)
+    VALUES (:fd, :fh, :of, :su)
+    ON DUPLICATE KEY UPDATE
+      oficial_turno = VALUES(oficial_turno),
+      suboficial_turno = VALUES(suboficial_turno)
+  ";
+  $st = $pdo->prepare($sql);
+  $st->execute([':fd'=>$fdSql, ':fh'=>$fhSql, ':of'=>$of, ':su'=>$su]);
 
-    $st = $pdo->prepare("INSERT INTO parte_encabezado (fecha_desde,fecha_hasta,oficial_turno,suboficial_turno)
-                         VALUES (:d,:h,:o,:s)");
-    $st->execute([':d'=>$fd, ':h'=>$fh, ':o'=>$of, ':s'=>$sf]);
-
-    out(['ok'=>true, 'id'=>(int)$pdo->lastInsertId()]);
-  }
-
-  // Opcional: traer el último encabezado guardado
-  if ($method === 'GET' && ($_GET['action'] ?? '') === 'last') {
-    $row = $pdo->query("SELECT * FROM parte_encabezado ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
-    if (!$row) out(['ok'=>true,'found'=>false]);
-    out(['ok'=>true,'found'=>true,'data'=>$row]);
-  }
-
-  out(['ok'=>false,'error'=>'Método no soportado'], 405);
-
-} catch (Throwable $e){
-  out(['ok'=>false,'error'=>$e->getMessage()], 500);
+  echo json_encode(['ok'=>true], JSON_UNESCAPED_UNICODE);
+} catch (\Throwable $e) {
+  http_response_code(500);
+  echo json_encode(['ok'=>false,'error'=>$e->getMessage(),'type'=>get_class($e)], JSON_UNESCAPED_UNICODE);
 }
