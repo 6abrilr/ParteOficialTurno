@@ -1,3 +1,5 @@
+// ========= app.js v8.3 =========
+
 // ========= Formateador REDISE → texto CCC =========
 function toDDMMMYY(d){
   if (/^\d{2}[A-Z]{3}\d{2}$/.test(d)) return d;
@@ -65,6 +67,7 @@ const qs  = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '')
   .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
   .replaceAll('"','&quot;').replaceAll("'","&#039;");
+console.log('[APP] v8.3 cargado');
 
 // ===== Estado de validaciones (gating del botón Generar) =====
 let encabezadoGuardado = false;
@@ -78,7 +81,6 @@ function refreshGenerarEnabled(){
   console.log('[GATE] encab=',encabezadoGuardado,' files=',archivosCargados,' sist=',sistemasConfirmado,' => habilitado=',ok);
   btn.disabled = !ok;
 }
-// recalculo inicial (por si hay valores precargados)
 refreshGenerarEnabled();
 
 // ===== Fecha por defecto: HOY 08:00 → MAÑANA 08:00 (campos del generador) =====
@@ -150,7 +152,6 @@ qs('btnImpLTA')?.addEventListener('click', async ()=>{
     const data = await r.json();
     if(!data.ok) throw new Error(data.error||'Error al importar');
     qs('ltaInfo') && (qs('ltaInfo').textContent = `Importado ✔  Filas REDISE: ${(data.redise||[]).length}`);
-    // marcar archivos listos y recalcular gate
     archivosCargados = (qs('p_lta')?.files?.length>0) && (qs('p_cenope')?.files?.length>0);
     refreshGenerarEnabled();
   }catch(err){
@@ -161,19 +162,30 @@ qs('btnImpLTA')?.addEventListener('click', async ()=>{
 // ==========================
 //   IMPORTADOR CENOPE (PDF)
 // ==========================
-qs('btnPrevCenope')?.addEventListener('click', async ()=>{
-  const f = qs('p_cenope')?.files?.[0];
-  if (!f) return alert('Elegí el PDF del CENOPE');
 
-  const info = qs('cenopeInfo');
+function getCenopeInput() {
+  const input = qs('p_cenope');
+  if (!input || !input.files || input.files.length === 0) return null;
+  return input;
+}
+function buildCenopeFD(dry = '1') {
+  const input = getCenopeInput();
+  if (!input) return null;
   const fd = new FormData();
-  fd.append('pdf', f);
-  fd.append('dry', '1');
-  fd.append('debug', '1'); // pedir trazas
+  Array.from(input.files).slice(0, 3).forEach(f => fd.append('pdf[]', f));
+  fd.append('dry', dry);
+  fd.append('debug', '1');
+  return fd;
+}
 
-  if (info) info.textContent = 'Procesando PDF (previsualización)...';
+qs('btnPrevCenope')?.addEventListener('click', async () => {
+  const info = qs('cenopeInfo');
+  const fd = buildCenopeFD('1');
+  if (!fd) return alert('Elegí el/los PDF del CENOPE');
 
-  try{
+  if (info) info.textContent = 'Procesando PDF(s) (previsualización)...';
+
+  try {
     const r   = await fetch(API_CENOPE, { method:'POST', body: fd });
     const raw = await r.text();
     let data;
@@ -185,45 +197,41 @@ qs('btnPrevCenope')?.addEventListener('click', async ()=>{
       throw new Error((data.error || 'Error al procesar') + dbg);
     }
 
+    const onlyObjects = (arr) => Array.isArray(arr) ? arr.filter(x => x && typeof x === 'object' && !Array.isArray(x)) : [];
+    const internado = onlyObjects(data.internado);
+    const alta      = onlyObjects(data.alta);
+    const fallecido = onlyObjects(data.fallecido);
+
     if (info) info.textContent =
-      `Internados: ${data.internado.length} | Altas: ${data.alta.length} | Fallecidos: ${data.fallecido.length}`;
+      `Internados: ${internado.length} | Altas: ${alta.length} | Fallecidos: ${fallecido.length}`;
 
-    const btn = qs('btnImpCenope'); if (btn) btn.disabled = false;
-    renderPreviewCenope(data);
+    qs('btnImpCenope') && (qs('btnImpCenope').disabled = false);
+    renderPreviewCenope({internado, alta, fallecido});
 
-  }catch(err){
+    archivosCargados = (qs('p_lta')?.files?.length>0) && (qs('p_cenope')?.files?.length>0);
+    refreshGenerarEnabled();
+
+  } catch (err) {
     console.error('[CENOPE] Previsualizar falló:', err);
     if (info) info.textContent = 'Error: ' + err.message;
   }
 });
 
-qs('btnImpCenope')?.addEventListener('click', async ()=>{
-  console.log('[CENOPE] Guardar: click');
-  const f = qs('p_cenope')?.files?.[0];
-  if (!f) return alert('Elegí el PDF del CENOPE');
-
+qs('btnImpCenope')?.addEventListener('click', async () => {
   const info = qs('cenopeInfo');
-  const fd = new FormData();
-  fd.append('pdf', f);
-  fd.append('dry', '0');     // guardar
-  fd.append('debug', '1');   // pedir trazas del server
+  const fd = buildCenopeFD('0');  // guardar
+  if (!fd) return alert('Elegí el/los PDF del CENOPE');
 
   if (info) info.textContent = 'Importando a la base...';
 
-  try{
+  try {
     const r   = await fetch(API_CENOPE, { method:'POST', body: fd });
     const raw = await r.text();
-    console.log('[CENOPE] HTTP', r.status, 'bytes=', raw.length);
-
     let data;
     try { data = JSON.parse(raw); }
-    catch {
-      console.error('[CENOPE] Respuesta NO-JSON (raw):\n', raw);
-      throw new Error('Respuesta no JSON: ' + raw.slice(0,400));
-    }
+    catch { throw new Error('Respuesta no JSON: ' + raw.slice(0,400)); }
 
     if (!data.ok) {
-      console.error('[CENOPE] Error servidor:', data);
       const dbg = data.debug ? '\n\n' + data.debug : '';
       throw new Error((data.error || 'Error al importar') + dbg);
     }
@@ -232,10 +240,10 @@ qs('btnImpCenope')?.addEventListener('click', async ()=>{
       `Importado. Internados: ${data.internado} | Altas: ${data.alta} | Fallecidos: ${data.fallecido}`;
 
     alert('CENOPE importado correctamente.');
-    // marcar archivos listos y recalcular gate
     archivosCargados = (qs('p_lta')?.files?.length>0) && (qs('p_cenope')?.files?.length>0);
     refreshGenerarEnabled();
-  }catch(err){
+
+  } catch (err) {
     console.error('[CENOPE] Guardar falló:', err);
     if (info) info.textContent = 'Error: ' + err.message;
     alert('Importar CENOPE falló:\n' + err.message);
@@ -246,6 +254,7 @@ qs('btnImpCenope')?.addEventListener('click', async ()=>{
 window.renderPreviewCenope = function renderPreviewCenope(data){
   const div = qs('previewTables'); if(!div) return;
 
+  // columnas para internados/altas/fallecidos (objetos)
   const cols = [
     ['Nro','Nro'],
     ['Grado','Grado'],
@@ -255,20 +264,33 @@ window.renderPreviewCenope = function renderPreviewCenope(data){
     ['Fecha','Fecha'],
     ['Habitación','Habitación'],
     ['Hospital','Hospital'],
+    ['Detalle','Detalle'],        // <- NUEVA columna para Fallecidos
   ];
 
+  const getVal = (obj, key) => {
+    if (!obj || typeof obj !== 'object') return '';
+    return Object.prototype.hasOwnProperty.call(obj, key) ? (obj[key] ?? '') : '';
+  };
+
   const mkEditable = (title, rows)=>{
-    if(!rows || !rows.length) {
+    const rowsObj = Array.isArray(rows)
+      ? rows.filter(r => r && typeof r === 'object')
+      : [];
+
+    if (!rowsObj.length) {
       return `<h6 class='mt-2'>${esc(title)}</h6><div class='text-muted'>SIN NOVEDAD</div>`;
     }
+
     const thead = `<thead><tr>${
-      cols.map(([k,lab])=>`<th>${esc(lab)}</th>`).join('')
+      cols.map(([,lab])=>`<th>${esc(lab)}</th>`).join('')
     }</tr></thead>`;
 
-    const tbody = rows.slice(0,50).map(r=>{
+    const tbody = rowsObj.slice(0,200).map((r, i)=>{
       const tds = cols.map(([k])=>{
-        const v = (k in r) ? r[k] : '';
-        return `<td contenteditable="true">${esc(v ?? '')}</td>`;
+        const v = k === 'Nro'
+          ? (String(getVal(r,k)).trim() || String(i+1))
+          : getVal(r, k);
+        return `<td contenteditable="true">${esc(v)}</td>`;
       }).join('');
       return `<tr>${tds}</tr>`;
     }).join('');
@@ -283,9 +305,9 @@ window.renderPreviewCenope = function renderPreviewCenope(data){
   };
 
   div.innerHTML =
-      mkEditable('INTERNADOS', data.internado || [])
-    + mkEditable('ALTAS',      data.alta      || [])
-    + mkEditable('FALLECIDOS', data.fallecido || []);
+      mkEditable('INTERNADOS', data?.internado)
+    + mkEditable('ALTAS',      data?.alta)
+    + mkEditable('FALLECIDOS', data?.fallecido);
 };
 
 // ============================
@@ -339,13 +361,12 @@ cargarSistemaTabla('tblSitelpar',4);
 cargarSistemaTabla('tblDC',5);
 cargarSistemaTabla('tblSITM2',6);
 
-// Botón "Confirmar sistemas" → sin alert, feedback visual y habilita Generar
+// Botón "Confirmar sistemas"
 qs('btnConfirmSistemas')?.addEventListener('click', (ev)=>{
   const btn = ev.currentTarget;
   sistemasConfirmado = true;
   refreshGenerarEnabled();
 
-  // feedback visual en el botón
   btn.disabled = true;
   btn.classList.remove('btn-outline-primary');
   btn.classList.add('btn-success');
@@ -411,7 +432,7 @@ async function cargarUltimoSnapshot(){
   return j.found ? j.snapshot : null;
 }
 
-// ===== LTA – Render editable con pintado + comparación =====
+// ===== LTA – Render =====
 function renderPreviewLTA(rows){
   const div = qs('ltaPreview'); if(!div) return;
   if(!rows || !rows.length){
@@ -494,47 +515,42 @@ function ltaLeerTablaActual(){
     ticket:   (tr.querySelector('.ce-tic')?.textContent ?? '').trim(),
     estado:   tr.querySelector('.sel-estado')?.value || 'ACTUALIZADA'
   }));
-}
+} // <-- cerrar la función AQUÍ
 
-// ===== Señal de “archivos cargados” (para habilitar Generar) =====
-['p_lta','p_cenope'].forEach(id=>{
-  qs(id)?.addEventListener('change', ()=>{
-    const lta = qs('p_lta')?.files?.length>0;
-    const ce  = qs('p_cenope')?.files?.length>0;
-    archivosCargados = lta && ce;
-    refreshGenerarEnabled();
-  });
-});
-
-// ===== Generar Parte del Arma (LTA + CENOPE) =====
-qs('btnGenerarParte')?.addEventListener('click', async ()=>{
+// ===== Generar Parte del Arma (usa lo guardado en la base) =====
+qs('btnGenerarParte')?.addEventListener('click', async () => {
   const fd = new FormData();
-  const lta = qs('p_lta')?.files?.[0];
-  const ce  = qs('p_cenope')?.files?.[0];
-  if(!lta || !ce) return alert('Subí LTA y CENOPE');
-  fd.append('lta', lta);
-  fd.append('cenope', ce);
-  fd.append('desde', qs('g_desde')?.value || '');
-  fd.append('hasta', qs('g_hasta')?.value || '');
-  fd.append('oficial', qs('g_oficial')?.value || '');
-  fd.append('suboficial', qs('g_subof')?.value || '');
+  fd.append('desde',     qs('g_desde')?.value || '');
+  fd.append('hasta',     qs('g_hasta')?.value || '');
+  fd.append('oficial',   (qs('g_oficial')?.value || '').trim());
+  fd.append('suboficial',(qs('g_subof')?.value || '').trim());
 
-  qs('parteInfo') && (qs('parteInfo').textContent = 'Generando Parte...');
-  try{
-    const r = await fetch(API_GENERAR_PARTE, {method:'POST', body: fd});
+  const ltaRows = (typeof ltaLeerTablaActual === 'function') ? ltaLeerTablaActual() : [];
+  if (ltaRows && ltaRows.length) fd.append('lta_json', JSON.stringify(ltaRows));
+
+  const info = qs('parteInfo');
+  if (info) info.textContent = 'Generando Parte...';
+
+  try {
+    const r   = await fetch(API_GENERAR_PARTE, { method: 'POST', body: fd });
     const raw = await r.text();
     let data;
-    try{ data = JSON.parse(raw); }catch{ throw new Error('Respuesta no JSON: '+raw); }
-    if(!data.ok) throw new Error(data.error||'No se pudo generar');
+    try { data = JSON.parse(raw); } 
+    catch { throw new Error('Respuesta no JSON de generar_parte: ' + raw.slice(0,400)); }
 
-    const aH = qs('lnkParteHTML'), aP = qs('lnkPartePDF');
+    if (!data.ok) throw new Error(data.error || 'No se pudo generar el parte');
+
+    const aH = qs('lnkParteHTML');
+    const aP = qs('lnkPartePDF');
     if (aH) { aH.href = data.html; aH.classList.remove('d-none'); }
     if (aP) {
       if (data.pdf) { aP.href = data.pdf; aP.classList.remove('d-none'); }
       else { aP.classList.add('d-none'); }
     }
-    qs('parteInfo') && (qs('parteInfo').textContent = `Parte generado ✔ – Turno ${data.turno}` + (data.pdf ? '' : ' (PDF no disponible)'));
-  }catch(err){
-    qs('parteInfo') && (qs('parteInfo').textContent = 'Error: ' + err.message);
+    if (info) info.textContent = `Parte generado ✔ – Turno ${data.turno || ''}`;
+  } catch (err) {
+    console.error('[PARTE] generar falló:', err);
+    if (qs('parteInfo')) qs('parteInfo').textContent = 'Error: ' + err.message;
+    alert('No se pudo generar el parte:\n' + err.message);
   }
 });

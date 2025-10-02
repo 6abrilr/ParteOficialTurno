@@ -22,7 +22,7 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
     .tr-estado-NUEVA   { background:#fff7e6; }
     .tr-estado-RESUELTA{ background:#eefaf1; }
     .tr-estado-ACTUALIZADA{}
-    /* estilos visuales para celdas editables */
+    /* celdas editables */
     #tblLTA td[contenteditable="true"],
     .table-editable td[contenteditable="true"]{
       outline: 1px dashed #ced4da;
@@ -102,7 +102,7 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
         <div class="section-title mb-2">Archivo CENOPE (PDF)</div>
         <div class="row g-2 align-items-center">
           <div class="col-md-6">
-            <input type="file" class="form-control" id="p_cenope" accept=".pdf,application/pdf">
+            <input type="file" id="p_cenope" name="pdf[]" class="form-control" accept=".pdf" multiple>
           </div>
           <div class="col-auto">
             <button class="btn btn-outline-secondary btn-sm" id="btnPrevCenope">Previsualizar</button>
@@ -165,7 +165,7 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
     </div>
   </div>
 
-  <!-- Panel de pendientes (opcional: se puede mantener) -->
+  <!-- Panel de pendientes (opcional) -->
   <div class="card">
     <div class="card-body">
       <div class="section-title mb-2">Pendientes (oculta resueltas)</div>
@@ -176,9 +176,7 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
             <th>Fecha</th><th>Título</th><th>Categoría</th><th>Unidad</th><th>Prioridad</th>
           </tr>
         </thead>
-        <tbody id="tblNovedades">
-          <!-- se llena desde app.js si mantenés esa parte -->
-        </tbody>
+        <tbody id="tblNovedades"></tbody>
       </table>
       <div id="ts" class="small text-muted"></div>
     </div>
@@ -186,6 +184,7 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
 
 </div>
 
-<script src="app.js"></script>
+<!-- Cache-busting para cargar la versión nueva -->
+<script src="app.js?v=9"></script>
 </body>
 </html>
