@@ -8,8 +8,8 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
   <meta charset="utf-8">
   <title>Parte de Novedades – B Com 602</title>
 
-  <link rel="icon" type="image/png" href="img/escudo602.png">
-  <link rel="shortcut icon" href="img/escudo602.png">
+  <link rel="icon" type="image/png" href="img/escudo602sinfondo.png">
+  <link rel="shortcut icon" href="img/escudo602sinfondo.png">
 
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -151,7 +151,7 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
   <!-- ===== Hero ===== -->
   <header class="brand-hero">
     <div class="hero-inner container">
-      <img class="brand-logo" src="img/escudo602.png" alt="Escudo 602">
+      <img class="brand-logo" src="img/escudo602sinfondo.png" alt="Escudo 602">
       <div>
         <div class="brand-title">Batallón de Comunicaciones 602</div>
         <div class="brand-sub">“Hogar de las Comunicaciones fijas del Ejército”</div>
