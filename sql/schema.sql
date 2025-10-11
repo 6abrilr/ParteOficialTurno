@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Servidor: 127.0.0.1
--- Tiempo de generación: 27-09-2025 a las 21:05:01
+-- Tiempo de generación: 11-10-2025 a las 13:36:53
 -- Versión del servidor: 10.4.32-MariaDB
 -- Versión de PHP: 8.2.12
 
@@ -132,7 +132,11 @@ CREATE TABLE `parte_encabezado` (
 --
 
 INSERT INTO `parte_encabezado` (`id`, `fecha_desde`, `fecha_hasta`, `oficial_turno`, `suboficial_turno`) VALUES
-(1, '2025-09-27 08:00:00', '2025-09-28 08:00:00', 'ST ROJAS', 'CB MARTINEZ');
+(1, '2025-09-27 08:00:00', '2025-09-28 08:00:00', 'st rojas', 'cb perez'),
+(13, '2025-09-28 08:00:00', '2025-09-29 08:00:00', 'ST MAIDANA', 'SI E'),
+(15, '2025-10-01 08:00:00', '2025-10-02 08:00:00', 'ST ROJAS', 'CB MARTINEZ'),
+(31, '2025-10-02 08:00:00', '2025-10-03 08:00:00', 'ST SCD NESTOR ROJAS', 'CB INF JOSE LUIS PEDROZO'),
+(37, '2025-10-03 08:00:00', '2025-10-04 08:00:00', 'ST ROJAS', 'CB MARTINEZ');
 
 -- --------------------------------------------------------
 
@@ -180,6 +184,13 @@ CREATE TABLE `personal_fallecido` (
   `creado_en` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Volcado de datos para la tabla `personal_fallecido`
+--
+
+INSERT INTO `personal_fallecido` (`id`, `categoria`, `nro`, `grado`, `apellido_nombre`, `apellidoNombre`, `arma`, `unidad`, `prom`, `fecha`, `habitacion`, `hospital`, `detalle`, `creado_en`) VALUES
+(17, '', 1, 'SA', 'Prada Walter', 'Prada Walter', 'COM', 'Retirado', NULL, '2025-09-30', NULL, NULL, 'Falleció en – Rolando Av Jorge Newbery - EL CALAFATE, SANTA CRUZ 2519 el 30Sep25', '2025-10-03 11:24:21');
+
 -- --------------------------------------------------------
 
 --
@@ -208,10 +219,10 @@ CREATE TABLE `personal_internado` (
 --
 
 INSERT INTO `personal_internado` (`id`, `categoria`, `nro`, `grado`, `apellido_nombre`, `apellidoNombre`, `arma`, `unidad`, `prom`, `fecha`, `habitacion`, `hospital`, `detalle`, `creado_en`) VALUES
-(1, 'OFICIALES', 1, 'CR', 'LANDA DIEGO HORACIO', '', 'Com', NULL, NULL, '2025-09-22', '433', NULL, NULL, '2025-09-27 15:58:31'),
-(2, 'SUBOFICIALES', 2, 'SP', 'Lance Gustavo Daniel', '', 'Com', 'Ca', NULL, '2025-07-22', '6', NULL, NULL, '2025-09-27 15:58:31'),
-(3, 'SUBOFICIALES', 3, 'SP', 'Peña German David', '', 'Com', 'RG', NULL, '2025-07-24', '618', NULL, NULL, '2025-09-27 15:58:31'),
-(4, 'SUBOFICIALES', 4, 'SA', 'GARINO RAUL', '', 'ABEL Com', 'RG', NULL, '2025-05-12', '332', NULL, NULL, '2025-09-27 15:58:31');
+(163, 'OFICIALES', 1, 'CR', 'LANDA DIEGO HORACIO', 'LANDA DIEGO HORACIO', 'Com', NULL, NULL, '2025-09-22', '433', NULL, NULL, '2025-10-03 11:24:21'),
+(164, 'SUBOFICIALES', 2, 'SP', 'Lance Gustavo Daniel', 'Lance Gustavo Daniel', 'Com', 'Ca', NULL, '2025-07-22', '6', NULL, NULL, '2025-10-03 11:24:21'),
+(165, 'SUBOFICIALES', 3, 'SP', 'Peña German David', 'Peña German David', 'Com', 'RG', NULL, '2025-07-24', '618', NULL, NULL, '2025-10-03 11:24:21'),
+(166, 'SUBOFICIALES', 4, 'SA', 'GARINO RAUL', 'GARINO RAUL', 'ABEL Com', 'RG', NULL, '2025-05-12', '332', NULL, NULL, '2025-10-03 11:24:21');
 
 -- --------------------------------------------------------
 
@@ -249,10 +260,10 @@ CREATE TABLE `sistema_estado` (
 
 INSERT INTO `sistema_estado` (`id`, `categoria_id`, `nombre`, `estado`, `novedad`, `ticket`, `actualizado_en`) VALUES
 (1, 2, 'WEB OFICIAL DEL EJERCITO', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
-(2, 2, 'PORTAL EJERCITO', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
-(3, 2, 'INTRANET', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
+(2, 2, 'PORTAL EJERCITO', 'EN LINEA', '', '', '2025-09-28 08:24:29'),
+(3, 2, 'INTRANET', 'SIN SERVICIO', '', '', '2025-10-02 10:30:54'),
 (4, 2, 'WEBMAIL', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
-(5, 3, 'MODERNIZACION', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
+(5, 3, 'MODERNIZACION', 'EN LINEA', '', '', '2025-10-01 21:49:28'),
 (6, 3, 'GCBA', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
 (7, 3, 'TELECOM (BGP)', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
 (8, 4, 'INTERNO', 'EN LINEA', NULL, NULL, '2025-09-27 18:40:17'),
@@ -524,7 +535,7 @@ ALTER TABLE `parte_arma_data`
 -- AUTO_INCREMENT de la tabla `parte_encabezado`
 --
 ALTER TABLE `parte_encabezado`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=41;
 
 --
 -- AUTO_INCREMENT de la tabla `personal_alta`
@@ -536,13 +547,13 @@ ALTER TABLE `personal_alta`
 -- AUTO_INCREMENT de la tabla `personal_fallecido`
 --
 ALTER TABLE `personal_fallecido`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
 
 --
 -- AUTO_INCREMENT de la tabla `personal_internado`
 --
 ALTER TABLE `personal_internado`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=167;
 
 --
 -- AUTO_INCREMENT de la tabla `redise_snapshot`
