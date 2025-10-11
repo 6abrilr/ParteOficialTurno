@@ -16,40 +16,24 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
 
   <style>
     :root{
-      /* === Paleta base del fondo === */
-      --ink:#0b1326;          /* azul muy oscuro */
-      --deep:#0a1830;         /* intermedio */
-      --glow:#1e7bdc;         /* cian brillante */
+      --ink:#0b1326; --deep:#0a1830; --glow:#1e7bdc;
+      --mesh-opacity:.70; --glow-strength:.55;
 
-      /* Intensidad de efectos del fondo */
-      --mesh-opacity:.70;
-      --glow-strength:.55;
-
-      /* === UI === */
-      --card-bg:#fff;
-      --card-border:#e9ecef;
-      --shadow:0 8px 24px rgba(33,37,41,.06);
+      --card-bg:#fff; --card-border:#e9ecef; --shadow:0 8px 24px rgba(33,37,41,.06);
       --primary:#0d6efd; --primary-2:#0b5ed7; --ring:#86b7fe;
-      --thead:#f6f7f9; --row-sep:#e9ecef;
-      --thead-text:#111;
+      --thead:#f6f7f9; --row-sep:#e9ecef; --thead-text:#111;
 
-      /* Thead de tablas detectadas (preview CENOPE) */
-      --thead-internado:#ffe4c2;  /* naranja claro */
-      --thead-alta:#d9f4e0;       /* verde claro  */
-      --thead-fallecido:#d7ebff;  /* celeste      */
+      --thead-internado:#ffe4c2;
+      --thead-alta:#d9f4e0;
+      --thead-fallecido:#d7ebff;
 
-      /* Ancho del container en pantallas grandes */
-      --container-max: 1280px;    /* subí/bajá (1240–1360) a gusto */
+      --container-max: 1280px;
     }
 
     html,body{ height:100%; }
-    body{
-      margin:0;
-      color:#212529;
-      background:#000; /* base */
-    }
+    body{ margin:0; color:#212529; background:#000; }
 
-    /* ======== FONDO GLOBAL (fijo) ======== */
+    /* ===== Fondo ===== */
     .page-bg{
       position:fixed; inset:0; z-index:-2; pointer-events:none;
       background:
@@ -59,7 +43,6 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
       background-attachment: fixed,fixed,fixed;
       filter: saturate(1.05);
     }
-    /* puntitos tipo estrellas, sutiles */
     .page-bg::before{
       content:""; position:absolute; inset:0; z-index:-1; opacity:.22;
       background-image:
@@ -68,44 +51,29 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
         radial-gradient(1.2px 1.2px at 82% 70%, #b7ddff 20%, transparent 60%),
         radial-gradient(1.6px 1.6px at 34% 76%, #cbe8ff 20%, transparent 60%),
         radial-gradient(1.1px 1.1px at 72% 16%, #a7d6ff 20%, transparent 60%);
-      background-repeat: no-repeat;
+      background-repeat:no-repeat;
       background-size: 1200px 800px, 1400px 900px, 1100px 900px, 1400px 1000px, 1300px 800px;
       background-position: 0 0, 30% 40%, 80% 60%, 10% 90%, 70% 10%;
     }
-    /* malla derecha */
     .mesh{
-      position:fixed; right:-220px; top:-140px;
-      width:1400px; height:900px; z-index:-1; opacity:var(--mesh-opacity);
-      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1400' height='900' viewBox='0 0 1400 900'%3E%3Cg fill='none' stroke='%23a6c9ff' stroke-opacity='.40' stroke-width='1.1'%3E%3Cpath d='M860 60 L1120 180 L980 300 L1260 360 L1360 240'/%3E%3Cpath d='M1020 520 L1240 430 L1360 580'/%3E%3Cpath d='M900 240 L1120 360 L1280 260'/%3E%3Cpath d='M940 720 L1200 600 L1340 740'/%3E%3C/g%3E%3Cg fill='%23e9f4ff' fill-opacity='.95'%3E%3Ccircle cx='860' cy='60' r='3'/%3E%3Ccircle cx='1120' cy='180' r='2.5'/%3E%3Ccircle cx='980' cy='300' r='2.5'/%3E%3Ccircle cx='1260' cy='360' r='3'/%3E%3Ccircle cx='1360' cy='240' r='2.5'/%3E%3Ccircle cx='1020' cy='520' r='2.6'/%3E%3Ccircle cx='1240' cy='430' r='2.4'/%3E%3Ccircle cx='1360' cy='580' r='2.6'/%3E%3Ccircle cx='900' cy='240' r='2.5'/%3E%3Ccircle cx='1120' cy='360' r='2.4'/%3E%3Ccircle cx='1280' cy='260' r='2.8'/%3E%3Ccircle cx='940' cy='720' r='2.4'/%3E%3Ccircle cx='1200' cy='600' r='2.8'/%3E%3Ccircle cx='1340' cy='740' r='2.5'/%3E%3C/g%3E%3C/svg%3E") no-repeat center/contain;
+      position:fixed; right:-220px; top:-140px; width:1400px; height:900px; z-index:-1; opacity:var(--mesh-opacity);
+      background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1400' height='900' viewBox='0 0 1400 900'%3E%3Cg fill='none' stroke='%23a6c9ff' stroke-opacity='.40' stroke-width='1.1'%3E%3Cpath d='M860 60 L1120 180 L980 300 L1260 360 L1360 240'/%3E%3Cpath d='M1020 520 L1240 430 L1360 580'/%3E%3Cpath d='M900 240 L1120 360 L1280 260'/%3E%3Cpath d='M940 720 L1200 600 L1340 740'/%3E%3C/g%3E%3Cg fill='%23e9f4ff' fill-opacity='.95'%3E%3Ccircle cx='860' cy='60' r='3'/%3E%3Ccircle cx='1120' cy='180' r='2.5'/%3E%3Ccircle cx='980' cy='300' r='2.5'/%3E%3Ccircle cx='1260' cy='360' r='3'/%3E%3Ccircle cx='1360' cy='240' r='2.5'/%3E%3Ccircle cx='1020' cy='520' r='2.6'/%3E%3Ccircle cx='1240' cy='430' r='2.4'/%3E%3Ccircle cx='1360' cy='580' r='2.6'/%3E%3Ccircle cx='900' cy='240' r='2.5'/%3E%3Ccircle cx='1120' cy='360' r='2.4'/%3E%3Ccircle cx='1280' cy='260' r='2.8'/%3E%3Ccircle cx='940' cy='720' r='2.4'/%3E%3Ccircle cx='1200' cy='600' r='2.8'/%3E%3Ccircle cx='1340' cy='740' r='2.5'/%3E%3C/g%3E%3C/svg%3E") no-repeat center/contain;
       mix-blend-mode:screen; filter:drop-shadow(0 0 35px rgba(124,196,255,.25));
       pointer-events:none;
     }
-    /* malla izquierda (espejada) */
-    .mesh.mesh--left{
-      left:-260px; top:180px; right:auto;
-      transform: scaleX(-1) rotate(3deg);
-    }
+    .mesh.mesh--left{ left:-260px; top:180px; right:auto; transform:scaleX(-1) rotate(3deg); }
 
-    /* ======= HERO ======= */
-    .brand-hero{
-      position:relative; padding:28px 0 90px; color:#e9f2ff; isolation:isolate;
-    }
+    /* ===== Hero ===== */
+    .brand-hero{ position:relative; padding:28px 0 90px; color:#e9f2ff; isolation:isolate; }
     .hero-inner{ display:flex; align-items:center; gap:14px; }
-    .brand-logo{ width:56px; height:56px; object-fit:contain; flex:0 0 auto;
-      filter:drop-shadow(0 2px 10px rgba(124,196,255,.30)); }
-    .brand-title{ font-weight:800; letter-spacing:.4px; font-size:28px; line-height:1.1;
-      text-shadow:0 2px 16px rgba(30,123,220,.45); }
-    .brand-sub{ font-size:16px; opacity:.9; border-top:2px solid rgba(124,196,255,.35);
-      display:inline-block; padding-top:4px; margin-top:2px; }
+    .brand-logo{ width:56px; height:56px; object-fit:contain; flex:0 0 auto; filter:drop-shadow(0 2px 10px rgba(124,196,255,.30)); }
+    .brand-title{ font-weight:800; letter-spacing:.4px; font-size:28px; line-height:1.1; text-shadow:0 2px 16px rgba(30,123,220,.45); }
+    .brand-sub{ font-size:16px; opacity:.9; border-top:2px solid rgba(124,196,255,.35); display:inline-block; padding-top:4px; margin-top:2px; }
     .brand-year{ margin-left:auto; font-size:28px; font-weight:700; opacity:.85; }
-
-    /* El contenido “sube” un poco dentro del hero */
     .main-wrap{ margin-top:-46px; }
 
-    /* ======= Tarjetas/UI ======= */
-    @media (min-width: 1200px){
-      .container{ max-width: var(--container-max) !important; }
-    }
+    /* ===== UI ===== */
+    @media (min-width:1200px){ .container{ max-width:var(--container-max) !important; } }
     .card{ border-radius:14px; border:1px solid var(--card-border); box-shadow:var(--shadow); background:var(--card-bg); }
     .card .card-body{ padding:18px; }
     .section-title{ font-weight:600; font-size:15px; text-transform:uppercase; letter-spacing:.03em; color:#212529; }
@@ -120,12 +88,10 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
     .table-sm td, .table-sm th{ padding:.45rem .6rem; }
     .table tbody tr + tr td{ border-top:1px solid var(--row-sep); }
 
-    /* thead coloreados por tipo (para la preview CENOPE) */
     .tbl-internado thead th{ background:var(--thead-internado) !important; }
     .tbl-alta      thead th{ background:var(--thead-alta) !important; }
     .tbl-fallecido thead th{ background:var(--thead-fallecido) !important; }
 
-    /* editables (LTA/CENOPE) */
     #tblLTA td[contenteditable="true"], .table-editable td[contenteditable="true"]{
       outline:1px dashed #ced4da; border-radius:4px; transition:background .15s ease, outline-color .15s ease;
     }
@@ -143,12 +109,10 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
 </head>
 <body>
 
-  <!-- Fondo global -->
   <div class="page-bg"></div>
   <span class="mesh"></span>
   <span class="mesh mesh--left"></span>
 
-  <!-- ===== Hero ===== -->
   <header class="brand-hero">
     <div class="hero-inner container">
       <img class="brand-logo" src="img/escudo602sinfondo.png" alt="Escudo 602">
@@ -160,7 +124,6 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
     </div>
   </header>
 
-  <!-- ===== Contenido principal ===== -->
   <main class="main-wrap">
     <div class="container">
 
@@ -170,7 +133,7 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
             <div class="section-title">Generar Parte del Arma</div>
           </div>
 
-          <!-- Encabezado del parte -->
+          <!-- Encabezado -->
           <div class="row g-3">
             <div class="col-sm-6 col-lg-3">
               <label class="form-label">Desde</label>
@@ -197,7 +160,7 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
 
           <hr class="my-4">
 
-          <!-- ===== CENOPE (ARRIBA) ===== -->
+          <!-- CENOPE -->
           <div class="mb-3">
             <div class="section-title mb-2">Archivo CENOPE (PDF)</div>
             <div class="row g-2 align-items-center">
@@ -214,13 +177,12 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
                 <div id="cenopeInfo" class="small text-muted"></div>
               </div>
             </div>
-            <!-- Previsualización CENOPE -->
             <div class="mt-3" id="previewTables"></div>
           </div>
 
           <hr class="my-4">
 
-          <!-- ===== LTA (ABAJO) ===== -->
+          <!-- LTA -->
           <div class="mb-3">
             <div class="section-title mb-2">Archivo LTA (DOCX/PDF)</div>
             <div class="row g-2 align-items-center">
@@ -237,7 +199,6 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
                 <div id="ltaInfo" class="small text-muted"></div>
               </div>
             </div>
-            <!-- Previsualización LTA editable -->
             <div class="mt-3" id="ltaPreview"></div>
           </div>
 
@@ -291,29 +252,32 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
     </div>
   </main>
 
-  <!-- Colorea automáticamente los thead en la previsualización CENOPE -->
+  <!-- Colorea theads al vuelo (no bloquea) -->
   <script>
   (function(){
     const root = document.getElementById('previewTables');
     if(!root) return;
-    function colorize(){
-      const hs = root.querySelectorAll('h2,h3,h4,h5,strong,p');
-      hs.forEach(h => {
-        const txt = (h.textContent||'').trim().toUpperCase();
-        let t = h.nextElementSibling;
-        while(t && t.tagName!=='TABLE'){ t=t.nextElementSibling; }
-        if(!t) return;
-        if (txt.includes('PERSONAL INTERNADO')) t.classList.add('tbl-internado');
-        else if (txt.includes('PERSONAL ALTA')) t.classList.add('tbl-alta');
-        else if (txt.includes('PERSONAL FALLECIDO')) t.classList.add('tbl-fallecido');
+    const paint = () => {
+      const hs = root.querySelectorAll('h6');
+      hs.forEach(h=>{
+        const txt = (h.textContent||'').toUpperCase();
+        let t = h.nextElementSibling?.querySelector('table');
+        if(!t) t = h.nextElementSibling;
+        if(!t || t.tagName!=='TABLE') t = h.parentElement?.querySelector('table');
+        if(!t || t.tagName!=='TABLE') return;
+        if (txt.includes('INTERNADOS')) t.classList.add('tbl-internado');
+        else if (txt.includes('ALTAS')) t.classList.add('tbl-alta');
+        else if (txt.includes('FALLECIDOS')) t.classList.add('tbl-fallecido');
       });
-    }
-    colorize();
-    new MutationObserver(colorize).observe(root, {childList:true, subtree:true});
+    };
+    paint();
+    let timer=null;
+    new MutationObserver(()=>{ clearTimeout(timer); timer=setTimeout(paint,120); })
+      .observe(root,{childList:true,subtree:true});
   })();
   </script>
 
-  <!-- Fallback: habilita y abre el parte aunque app.js no enganche -->
+  <!-- Habilitar “Generar Parte” si algo falla del JS principal -->
   <script>
   (function () {
     const btnGen = document.getElementById('btnGenerarParte');
@@ -323,20 +287,13 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
     const fHasta  = document.getElementById('g_hasta');
     const fOfi    = document.getElementById('g_oficial');
     const fSub    = document.getElementById('g_subof');
-
     if (!btnGen) return;
-
-    function listo() {
-      return [fDesde, fHasta, fOfi, fSub].every(el => el && el.value && el.value.trim() !== '');
-    }
-    function tryEnable() {
-      if (listo()) btnGen.removeAttribute('disabled');
-    }
-    [fDesde, fHasta, fOfi, fSub].forEach(el => el && el.addEventListener('input', tryEnable));
-    btnEnc && btnEnc.addEventListener('click', () => setTimeout(tryEnable, 150));
-    btnSis && btnSis.addEventListener('click', () => setTimeout(tryEnable, 150));
+    const listo = () => [fDesde,fHasta,fOfi,fSub].every(el=>el && el.value && el.value.trim()!=='');
+    const tryEnable = () => { if (listo()) btnGen.removeAttribute('disabled'); };
+    [fDesde,fHasta,fOfi,fSub].forEach(el => el && el.addEventListener('input', tryEnable));
+    btnEnc && btnEnc.addEventListener('click', () => setTimeout(tryEnable, 120));
+    btnSis && btnSis.addEventListener('click', () => setTimeout(tryEnable, 120));
     tryEnable();
-
     btnGen.addEventListener('click', function () {
       if (btnGen.hasAttribute('disabled')) return;
       if (!listo()) { alert('Completá fechas y encabezado.'); return; }
@@ -346,7 +303,6 @@ date_default_timezone_set('America/Argentina/Buenos_Aires');
   })();
   </script>
 
-  <!-- Cache-busting -->
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>

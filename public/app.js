@@ -1,59 +1,39 @@
-// ========= app.js v8.3 =========
+// ========= app.js v15 =========
 
-// ========= Formateador REDISE → texto CCC =========
+// ====== FORMATEOS/UTILS ======
 function toDDMMMYY(d){
-  if (/^\d{2}[A-Z]{3}\d{2}$/.test(d)) return d;
+  if (/^\d{2}[A-Z]{3}\d{2}(?:\s+[0-2]\d[0-5]\d)?$/.test(d)) return d;
   const MES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
   const m = String(d||'').trim();
+  // ddMMMaa
   if (/^\d{1,2}[A-Z]{3}\d{2}$/.test(m)) return (m.length===7?('0'+m):m).toUpperCase();
+  // dd/mm/aa o aa-mm-dd
+  let x = m.match(/^(\d{1,4})[\/\-](\d{1,2})[\/\-](\d{1,4})(?:[ T](\d{1,2})[:hH\.]?(\d{2}))?$/);
+  if (x){
+    let yyyy,mm,dd;
+    if (x[1].length===4){ yyyy=x[1]; mm=x[2]; dd=x[3]; } else { dd=x[1]; mm=x[2]; yyyy=x[3]; }
+    const mon = MES[(+mm||1)-1];
+    const hhmm = (x[4]&&x[5]) ? (' '+String(+x[4]).padStart(2,'0')+String(+x[5]).padStart(2,'0')) : '';
+    return `${String(+dd).padStart(2,'0')}${mon}${String(yyyy).slice(-2)}${hhmm}`;
+  }
+  // parse estándar
   const dt = new Date(m);
-  if (isNaN(dt)) return '';
-  const dd  = String(dt.getDate()).padStart(2,'0');
-  const mon = MES[dt.getMonth()];
-  const yy  = String(dt.getFullYear()).slice(-2);
-  return `${dd}${mon}${yy}`;
-}
-function cleanNodo(n){
-  n = (n||'').toUpperCase().replace(/\s+/g,' ').trim();
-  if (!/^CCIG/.test(n)) return n;
-  const parts = n.split(' ');
-  const head = parts.shift();
-  const rest = parts.join(' ');
-  const lines = [];
-  let row = '';
-  rest.split(' ').forEach(w=>{
-    if ((row + ' ' + w).trim().length > 15) {
-      if (row) { lines.push(row.trim()); row=''; }
-    }
-    row += (row?' ':'') + w;
-  });
-  if (row) lines.push(row.trim());
-  return head + '\n' + lines.join('\n');
-}
-function tailServicioTicket(servicio, ticket){
-  const svc = (servicio||'').toUpperCase().replace('VHF/HF','HF/VHF');
-  const svcTxt = svc ? ' ' + svc : '';
-  const tic = (ticket||'').trim();
-  const ticTxt = tic ? ' ' + tic : ' ---';
-  return (svcTxt || ' ---') + ticTxt;
-}
-function rediseToTextoCCC(rows){
-  const out = [];
-  (rows||[]).forEach(r=>{
-    const nodo  = cleanNodo(r.nodo);
-    const desde = (r.desde||'').toUpperCase();
-    const nov   = (r.novedad||'').replace(/\s{2,}/g,' ').trim();
-    const fecha = toDDMMMYY(r.fecha || new Date());
-    const tail  = tailServicioTicket(r.servicio, r.ticket);
-    if (!nodo || !nov) return;
-    const block = [ nodo, desde || '', nov, `${fecha}${tail}` ]
-      .filter(x=>String(x).trim()!=='').join('\n');
-    out.push(block);
-  });
-  return out.join('\n');
+  if (!isNaN(dt)){
+    const dd  = String(dt.getDate()).padStart(2,'0');
+    const mon = MES[dt.getMonth()];
+    const yy  = String(dt.getFullYear()).slice(-2);
+    return `${dd}${mon}${yy}`;
+  }
+  return '';
 }
 
-// ===== Endpoints =====
+// saneado
+const esc = (s) => String(s ?? '')
+  .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
+  .replaceAll('"','&quot;').replaceAll("'","&#039;");
+const get = (id) => document.getElementById(id);
+
+// ====== ENDPOINTS ======
 const API_NOV     = '../php/api_novedades.php';
 const API_PARTE   = '../php/api_parte.php';
 const API_CENOPE  = '../php/import_cenope.php';
@@ -62,49 +42,42 @@ const API_SIST    = '../php/api_sistemas.php';
 const API_REDISE  = '../php/api_redise.php';
 const API_GENERAR_PARTE = '../php/generar_parte.php';
 
-// ===== Helpers =====
-const qs  = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? '')
-  .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
-  .replaceAll('"','&quot;').replaceAll("'","&#039;");
-console.log('[APP] v8.3 cargado');
+console.log('[APP] v15 cargado');
 
-// ===== Estado de validaciones (gating del botón Generar) =====
+// ====== GATING GENERAR ======
 let encabezadoGuardado = false;
 let archivosCargados   = false;
 let sistemasConfirmado = false;
-
 function refreshGenerarEnabled(){
-  const btn = qs('btnGenerarParte');
+  const btn = get('btnGenerarParte');
   if (!btn) return;
   const ok = (encabezadoGuardado && archivosCargados && sistemasConfirmado);
-  console.log('[GATE] encab=',encabezadoGuardado,' files=',archivosCargados,' sist=',sistemasConfirmado,' => habilitado=',ok);
   btn.disabled = !ok;
 }
 refreshGenerarEnabled();
 
-// ===== Fecha por defecto: HOY 08:00 → MAÑANA 08:00 (campos del generador) =====
+// ====== Defaults 08:00 → 08:00 +1 ======
 (function setDefaultDates0800(){
-  const fDesde = qs('g_desde'), fHasta = qs('g_hasta');
+  const fDesde = get('g_desde'), fHasta = get('g_hasta');
   if (!fDesde || !fHasta) return;
   const now = new Date();
-  const hoy0800 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0, 0);
-  const maniana0800 = new Date(hoy0800.getTime() + 24*60*60*1000);
+  const base0800 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0, 0);
+  const next0800 = new Date(base0800.getTime() + 24*60*60*1000);
   const toLocal = (d) => {
     const off = d.getTimezoneOffset()*60000;
     return new Date(d.getTime() - off).toISOString().slice(0,16);
   };
-  if (!fDesde.value) fDesde.value = toLocal(hoy0800);
-  if (!fHasta.value) fHasta.value = toLocal(maniana0800);
+  if (!fDesde.value) fDesde.value = toLocal(base0800);
+  if (!fHasta.value) fHasta.value = toLocal(next0800);
 })();
 
-// ===== Guardar encabezado =====
-qs('btnGuardarEncGen')?.addEventListener('click', async ()=>{
+// ====== Guardar encabezado ======
+get('btnGuardarEncGen')?.addEventListener('click', async ()=>{
   const payload = {
-    fecha_desde: qs('g_desde')?.value || '',
-    fecha_hasta: qs('g_hasta')?.value || '',
-    oficial_turno: (qs('g_oficial')?.value || '').trim(),
-    suboficial_turno: (qs('g_subof')?.value || '').trim()
+    fecha_desde: get('g_desde')?.value || '',
+    fecha_hasta: get('g_hasta')?.value || '',
+    oficial_turno: (get('g_oficial')?.value || '').trim(),
+    suboficial_turno: (get('g_subof')?.value || '').trim()
   };
   try{
     const r = await fetch(API_PARTE,{method:'POST', body: JSON.stringify(payload)});
@@ -120,51 +93,45 @@ qs('btnGuardarEncGen')?.addEventListener('click', async ()=>{
   }
 });
 
-// ==========================
-//   IMPORTADOR LTA (DOCX/PDF)
-// ==========================
-qs('btnPrevLTA')?.addEventListener('click', async ()=>{
-  const f = qs('p_lta')?.files?.[0];
+// ====== LTA ======
+get('btnPrevLTA')?.addEventListener('click', async ()=>{
+  const f = get('p_lta')?.files?.[0];
   if(!f) return alert('Elegí el DOCX o PDF del LTA');
   const fd = new FormData(); fd.append('file', f); fd.append('dry','1');
-  qs('ltaInfo') && (qs('ltaInfo').textContent = 'Procesando archivo (previsualización)...');
+  get('ltaInfo') && (get('ltaInfo').textContent = 'Procesando archivo (previsualización)...');
   try{
     const r = await fetch(API_LTA,{method:'POST', body: fd});
     const data = await r.json();
     if(!data.ok) throw new Error(data.error||'Error al procesar');
     renderPreviewLTA(data.redise || []);
-    qs('ltaInfo').textContent =
-      `Filas REDISE: ${(data.redise||[]).length}` + (data._src ? `  [${data._src}]` : '');
-    qs('btnImpLTA') && (qs('btnImpLTA').disabled = false);
+    get('ltaInfo').textContent = `Filas REDISE: ${(data.redise||[]).length}` + (data._src ? `  [${data._src}]` : '');
+    get('btnImpLTA') && (get('btnImpLTA').disabled = false);
   }catch(err){
-    qs('ltaInfo') && (qs('ltaInfo').textContent = 'Error: '+ err.message);
-    qs('ltaPreview') && (qs('ltaPreview').innerHTML = '');
+    get('ltaInfo') && (get('ltaInfo').textContent = 'Error: '+ err.message);
+    get('ltaPreview') && (get('ltaPreview').innerHTML = '');
   }
 });
 
-qs('btnImpLTA')?.addEventListener('click', async ()=>{
-  const f = qs('p_lta')?.files?.[0];
+get('btnImpLTA')?.addEventListener('click', async ()=>{
+  const f = get('p_lta')?.files?.[0];
   if(!f) return;
   const fd = new FormData(); fd.append('file', f); fd.append('dry','0');
-  qs('ltaInfo') && (qs('ltaInfo').textContent = 'Importando...');
+  get('ltaInfo') && (get('ltaInfo').textContent = 'Importando...');
   try{
     const r = await fetch(API_LTA,{method:'POST', body: fd});
     const data = await r.json();
     if(!data.ok) throw new Error(data.error||'Error al importar');
-    qs('ltaInfo') && (qs('ltaInfo').textContent = `Importado ✔  Filas REDISE: ${(data.redise||[]).length}`);
-    archivosCargados = (qs('p_lta')?.files?.length>0) && (qs('p_cenope')?.files?.length>0);
+    get('ltaInfo') && (get('ltaInfo').textContent = `Importado ✔  Filas REDISE: ${(data.redise||[]).length}`);
+    archivosCargados = (get('p_lta')?.files?.length>0) && (get('p_cenope')?.files?.length>0);
     refreshGenerarEnabled();
   }catch(err){
-    qs('ltaInfo') && (qs('ltaInfo').textContent = 'Error: '+ err.message);
+    get('ltaInfo') && (get('ltaInfo').textContent = 'Error: '+ err.message);
   }
 });
 
-// ==========================
-//   IMPORTADOR CENOPE (PDF)
-// ==========================
-
+// ====== CENOPE ======
 function getCenopeInput() {
-  const input = qs('p_cenope');
+  const input = get('p_cenope');
   if (!input || !input.files || input.files.length === 0) return null;
   return input;
 }
@@ -178,25 +145,21 @@ function buildCenopeFD(dry = '1') {
   return fd;
 }
 
-qs('btnPrevCenope')?.addEventListener('click', async () => {
-  const info = qs('cenopeInfo');
+get('btnPrevCenope')?.addEventListener('click', async () => {
+  const info = get('cenopeInfo');
   const fd = buildCenopeFD('1');
   if (!fd) return alert('Elegí el/los PDF del CENOPE');
-
   if (info) info.textContent = 'Procesando PDF(s) (previsualización)...';
-
   try {
     const r   = await fetch(API_CENOPE, { method:'POST', body: fd });
     const raw = await r.text();
     let data;
     try { data = JSON.parse(raw); }
     catch { throw new Error('Respuesta no JSON en previsualización: ' + raw.slice(0,400)); }
-
     if (!data.ok) {
       const dbg = data.debug ? '\n\n' + data.debug : '';
       throw new Error((data.error || 'Error al procesar') + dbg);
     }
-
     const onlyObjects = (arr) => Array.isArray(arr) ? arr.filter(x => x && typeof x === 'object' && !Array.isArray(x)) : [];
     const internado = onlyObjects(data.internado);
     const alta      = onlyObjects(data.alta);
@@ -205,44 +168,37 @@ qs('btnPrevCenope')?.addEventListener('click', async () => {
     if (info) info.textContent =
       `Internados: ${internado.length} | Altas: ${alta.length} | Fallecidos: ${fallecido.length}`;
 
-    qs('btnImpCenope') && (qs('btnImpCenope').disabled = false);
+    get('btnImpCenope') && (get('btnImpCenope').disabled = false);
     renderPreviewCenope({internado, alta, fallecido});
 
-    archivosCargados = (qs('p_lta')?.files?.length>0) && (qs('p_cenope')?.files?.length>0);
+    archivosCargados = (get('p_lta')?.files?.length>0) && (get('p_cenope')?.files?.length>0);
     refreshGenerarEnabled();
-
   } catch (err) {
     console.error('[CENOPE] Previsualizar falló:', err);
     if (info) info.textContent = 'Error: ' + err.message;
   }
 });
 
-qs('btnImpCenope')?.addEventListener('click', async () => {
-  const info = qs('cenopeInfo');
-  const fd = buildCenopeFD('0');  // guardar
+get('btnImpCenope')?.addEventListener('click', async () => {
+  const info = get('cenopeInfo');
+  const fd = buildCenopeFD('0');
   if (!fd) return alert('Elegí el/los PDF del CENOPE');
-
   if (info) info.textContent = 'Importando a la base...';
-
   try {
     const r   = await fetch(API_CENOPE, { method:'POST', body: fd });
     const raw = await r.text();
     let data;
     try { data = JSON.parse(raw); }
     catch { throw new Error('Respuesta no JSON: ' + raw.slice(0,400)); }
-
     if (!data.ok) {
       const dbg = data.debug ? '\n\n' + data.debug : '';
       throw new Error((data.error || 'Error al importar') + dbg);
     }
-
     if (info) info.textContent =
       `Importado. Internados: ${data.internado} | Altas: ${data.alta} | Fallecidos: ${data.fallecido}`;
-
     alert('CENOPE importado correctamente.');
-    archivosCargados = (qs('p_lta')?.files?.length>0) && (qs('p_cenope')?.files?.length>0);
+    archivosCargados = (get('p_lta')?.files?.length>0) && (get('p_cenope')?.files?.length>0);
     refreshGenerarEnabled();
-
   } catch (err) {
     console.error('[CENOPE] Guardar falló:', err);
     if (info) info.textContent = 'Error: ' + err.message;
@@ -250,64 +206,116 @@ qs('btnImpCenope')?.addEventListener('click', async () => {
   }
 });
 
-// --- CENOPE: render de la previsualización (EDITABLE) ---
-window.renderPreviewCenope = function renderPreviewCenope(data){
-  const div = qs('previewTables'); if(!div) return;
+// ====== Previsualización CENOPE (EDITABLE) ======
 
-  // columnas para internados/altas/fallecidos (objetos)
+// Heurística para separar nombre de dirección/lugar (caso FALLECIDOS).
+function cleanNombre(nombre, apoyo){
+  const ADDRESS_TRIG = [" AV", " AV.", " AVENIDA", " CALLE", " RUTA", " PJE", " PASAJE", " KM ", " B° ", " BARRIO", " DIAG", " DIAGONAL"];
+  let s = String(nombre||'').trim();
+  const sup = (" "+String(apoyo||'').toUpperCase());
+  // Si el “apoyo” (usualmente Lugar/Detalle) contiene un gatillo, cortamos el nombre al encontrar el mismo gatillo dentro del nombre.
+  for(const trig of ADDRESS_TRIG){
+    const p = sup.indexOf(trig);
+    if(p>0){
+      const key = sup.slice(p, p+14).trim();
+      const i2 = (" "+s.toUpperCase()).indexOf(key);
+      if(i2>5){ s = s.slice(0, i2-1).trim(); break; }
+    }
+  }
+  // back-up: cortar si dentro del nombre aparece un gatillo común
+  if (/[ ,;\-–•·]\s*(AV\.?|AVENIDA|CALLE|PJE|RUTA|KM|DIAG)/i.test(s)){
+    s = s.replace(/([ ,;\-–•·]\s*(AV\.?|AVENIDA|CALLE|PJE|RUTA|KM|DIAG).*)$/i,'').trim();
+  }
+  // limpiar una fecha si quedó pegada
+  s = s.replace(/\b\d{1,2}(ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)\d{2}\b.*$/i,'').trim();
+  return s;
+}
+
+// Toma un objeto “fila” y saca el campo por alias
+function pick(obj, keys){
+  for (const k of keys){
+    if (k in obj && obj[k]!=null && String(obj[k]).trim()!=='') return String(obj[k]);
+  }
+  return '';
+}
+
+// Render principal
+window.renderPreviewCenope = function renderPreviewCenope(data){
+  const div = get('previewTables'); if(!div) return;
+
   const cols = [
     ['Nro','Nro'],
     ['Grado','Grado'],
     ['Apellido y Nombre','Apellido y Nombre'],
     ['Arma','Arma'],
-    ['Unidad','Unidad/Destino'],
+    ['Unidad/Destino','Unidad/Destino'],
     ['Fecha','Fecha'],
     ['Habitación','Habitación'],
     ['Hospital','Hospital'],
-    ['Detalle','Detalle'],        // <- NUEVA columna para Fallecidos
+    ['Detalle','Detalle'],
   ];
 
-  const getVal = (obj, key) => {
-    if (!obj || typeof obj !== 'object') return '';
-    return Object.prototype.hasOwnProperty.call(obj, key) ? (obj[key] ?? '') : '';
-  };
+  const mkEditable = (title, rows, kind)=>{
+    const rowsObj = Array.isArray(rows)? rows.filter(r=>r && typeof r==='object') : [];
+    const thead = `<thead><tr>${cols.map(([,lab])=>`<th>${esc(lab)}</th>`).join('')}</tr></thead>`;
 
-  const mkEditable = (title, rows)=>{
-    const rowsObj = Array.isArray(rows)
-      ? rows.filter(r => r && typeof r === 'object')
-      : [];
+    const tbody = rowsObj.slice(0,400).map((r, i)=>{
+      // Normalización por alias (lo más tolerante posible)
+      const grado = pick(r, ['Grado','GRADO']);
+      const arma  = pick(r, ['Arma','ARMA','ESP/SER','ARMA / ESP / SER','ARMA / ESP /SER']);
+      const unidad= pick(r, [
+        'Unidad/Destino','SITUACIÓN DE REVISTA / DESTINO','SITUACION DE REVISTA / DESTINO',
+        'DESTINO','Situación de Revista / Destino','Unidad'
+      ]);
+      let nombre = pick(r, ['Apellido y Nombre','APELLIDO Y NOMBRE','Nombre']);
+      let fecha  = toDDMMMYY( pick(r, ['Fecha','FECHA']) );
+      let habit  = pick(r, ['Habitación','HABITACIÓN','HABITACION','PISO/HAB/CAMA','PISO / HAB / CAMA']);
+      let hosp   = pick(r, ['Hospital','HOSPITAL']);
+      let detalle= pick(r, ['Detalle','DETALLE','LUGAR Y FECHA','Lugar y fecha','Lugar','LUGAR']);
 
-    if (!rowsObj.length) {
-      return `<h6 class='mt-2'>${esc(title)}</h6><div class='text-muted'>SIN NOVEDAD</div>`;
-    }
+      // Limpieza especial para FALLECIDOS (nombre + dirección)
+      if (kind==='FALLECIDOS'){
+        // si “detalle” viene vacío pero hay un campo lugar y fecha crudo, úsalo
+        if (!detalle) detalle = pick(r, ['LUGAR Y FECHA','Lugar y fecha','LUGAR','Lugar']);
+        const sepFecha = detalle.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{1,2}\s*(?:ENE|FEB|MAR|ABR|MAY|JUN|JUL|AGO|SEP|OCT|NOV|DIC)\s*\d{2,4}|\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/i);
+        if (sepFecha && !fecha) fecha = toDDMMMYY(sepFecha[1]);
+        if (sepFecha) detalle = detalle.replace(sepFecha[0],'').replace(/^[\s,\-:;]+/,'').trim();
+        const limpio = cleanNombre(nombre, detalle);
+        nombre = limpio || nombre;
+        if (detalle) detalle = `Falleció en – ${detalle}`;
+        if (!unidad) unidad = 'Retirado';
+      }
 
-    const thead = `<thead><tr>${
-      cols.map(([,lab])=>`<th>${esc(lab)}</th>`).join('')
-    }</tr></thead>`;
+      const td = (k,val) => `<td contenteditable="true">${esc(val)}</td>`;
+      const celdas = [
+        `<td>${String(i+1)}</td>`,
+        td('Grado', grado),
+        td('Apellido y Nombre', nombre),
+        td('Arma', arma),
+        td('Unidad/Destino', unidad),
+        td('Fecha', fecha),
+        td('Habitación', habit),
+        td('Hospital', hosp),
+        td('Detalle', detalle),
+      ].join('');
 
-    const tbody = rowsObj.slice(0,200).map((r, i)=>{
-      const tds = cols.map(([k])=>{
-        const v = k === 'Nro'
-          ? (String(getVal(r,k)).trim() || String(i+1))
-          : getVal(r, k);
-        return `<td contenteditable="true">${esc(v)}</td>`;
-      }).join('');
-      return `<tr>${tds}</tr>`;
+      return `<tr>${celdas}</tr>`;
     }).join('');
 
-    return `
-      <h6 class='mt-3'>${esc(title)} <span class="estado-badge">(editable)</span></h6>
+    const empty = (!rowsObj.length) ? `<div class='text-muted'>SIN NOVEDAD</div>` : `
       <div class='table-responsive'>
         <table class='table table-sm table-bordered table-editable'>
           ${thead}<tbody>${tbody}</tbody>
         </table>
       </div>`;
+
+    return `<h6 class='mt-3'>${esc(title)} <span class="estado-badge">(editable)</span></h6>${empty}`;
   };
 
   div.innerHTML =
-      mkEditable('INTERNADOS', data?.internado)
-    + mkEditable('ALTAS',      data?.alta)
-    + mkEditable('FALLECIDOS', data?.fallecido);
+      mkEditable('INTERNADOS', data?.internado, 'INTERNADOS')
+    + mkEditable('ALTAS',      data?.alta,      'ALTAS')
+    + mkEditable('FALLECIDOS', data?.fallecido, 'FALLECIDOS');
 };
 
 // ============================
@@ -316,7 +324,7 @@ window.renderPreviewCenope = function renderPreviewCenope(data){
 const ESTADOS = ['EN LINEA','SIN SERVICIO','NOVEDAD'];
 
 async function cargarSistemaTabla(divId, catId){
-  const div = qs(divId); if(!div) return;
+  const div = get(divId); if(!div) return;
   try{
     const r = await fetch(`${API_SIST}?action=listar&cat=${catId}`);
     const rows = await r.json();
@@ -352,6 +360,7 @@ async function cargarSistemaTabla(divId, catId){
     });
   }catch(e){
     console.error(e);
+    div.innerHTML = '<div class="text-muted">No se pudo cargar.</div>';
   }
 }
 
@@ -362,18 +371,17 @@ cargarSistemaTabla('tblDC',5);
 cargarSistemaTabla('tblSITM2',6);
 
 // Botón "Confirmar sistemas"
-qs('btnConfirmSistemas')?.addEventListener('click', (ev)=>{
+get('btnConfirmSistemas')?.addEventListener('click', (ev)=>{
   const btn = ev.currentTarget;
   sistemasConfirmado = true;
   refreshGenerarEnabled();
-
   btn.disabled = true;
   btn.classList.remove('btn-outline-primary');
   btn.classList.add('btn-success');
   btn.textContent = 'Sistemas confirmados ✔';
 });
 
-// ===== Helpers (LTA / REDISE) =====
+// ===== Helpers LTA =====
 function turnoHoyDDMMMYY(){
   const d = new Date();
   const dd = String(d.getDate()).padStart(2,'0');
@@ -385,9 +393,8 @@ function applyRowEstado(tr, estado){
   tr.classList.remove('tr-estado-NUEVA','tr-estado-ACTUALIZADA','tr-estado-RESUELTA');
   if (estado) tr.classList.add('tr-estado-'+estado);
 }
-function valueOrEmpty(el){ return (el?.textContent ?? '').trim(); }
 
-// ======== Snapshots/Comparación (para LTA) ========
+// ===== LTA – Preview y diff =====
 function normNodo(n){ return String(n||'').toUpperCase().replace(/\s+/g,' ').trim(); }
 function normText(s){ return String(s||'').toUpperCase().replace(/\s+/g,' ').trim(); }
 
@@ -432,9 +439,8 @@ async function cargarUltimoSnapshot(){
   return j.found ? j.snapshot : null;
 }
 
-// ===== LTA – Render =====
 function renderPreviewLTA(rows){
-  const div = qs('ltaPreview'); if(!div) return;
+  const div = get('ltaPreview'); if(!div) return;
   if(!rows || !rows.length){
     div.innerHTML = '<div class="text-muted">SIN NOVEDAD</div>';
     return;
@@ -454,8 +460,9 @@ function renderPreviewLTA(rows){
     }
   })();
 }
+
 function renderLtaTabla(rows, hoy){
-  const div = qs('ltaPreview'); if(!div) return;
+  const div = get('ltaPreview'); if(!div) return;
   const head = `
     <thead>
       <tr>
@@ -472,9 +479,9 @@ function renderLtaTabla(rows, hoy){
     <tr data-row="${idx}" class="tr-estado-${r.estado||'ACTUALIZADA'}">
       <td contenteditable="true" class="ce-nodo">${esc(r.nodo||'')}</td>
       <td contenteditable="true" class="ce-desde text-nowrap">${esc(r.desde||'')}</td>
-      <td contenteditable="true" class="ce-nov">${esc(r.novedad||'')}</td>
+      <td contenteditable="true" class="ce-nov">${esc((r.novedad||'').replace(/\s{2,}/g,' ').trim())}</td>
       <td contenteditable="true" class="ce-fecha text-nowrap">${esc(r.fecha||hoy)}</td>
-      <td contenteditable="true" class="ce-serv text-nowrap">${esc(r.servicio||'')}</td>
+      <td contenteditable="true" class="ce-serv text-nowrap">${esc((r.servicio||'').toUpperCase().replace('VHF/HF','HF/VHF'))}</td>
       <td contenteditable="true" class="ce-tic text-nowrap">${esc(r.ticket||'')}</td>
       <td>
         <select class="form-select form-select-sm sel-estado" data-row="${idx}">
@@ -498,14 +505,15 @@ function renderLtaTabla(rows, hoy){
       applyRowEstado(tr, sel.value);
     };
   });
-  const info = qs('ltaDiffInfo');
+  const info = get('ltaDiffInfo');
   if (info) {
     const cnt = rows.reduce((a,r)=>{ a[r.estado||'ACTUALIZADA']=(a[r.estado||'ACTUALIZADA']||0)+1; return a; },{});
     info.textContent = `NUEVAS: ${cnt['NUEVA']||0} | ACTUALIZADAS: ${cnt['ACTUALIZADA']||0} | RESUELTAS: ${cnt['RESUELTA']||0}`;
   }
 }
+
 function ltaLeerTablaActual(){
-  const tbl = qs('tblLTA'); if(!tbl) return [];
+  const tbl = get('tblLTA'); if(!tbl) return [];
   return Array.from(tbl.querySelectorAll('tbody tr')).map(tr=>({
     nodo:     (tr.querySelector('.ce-nodo')?.textContent ?? '').trim(),
     desde:    (tr.querySelector('.ce-desde')?.textContent ?? '').trim(),
@@ -515,20 +523,20 @@ function ltaLeerTablaActual(){
     ticket:   (tr.querySelector('.ce-tic')?.textContent ?? '').trim(),
     estado:   tr.querySelector('.sel-estado')?.value || 'ACTUALIZADA'
   }));
-} // <-- cerrar la función AQUÍ
+}
 
-// ===== Generar Parte del Arma (usa lo guardado en la base) =====
-qs('btnGenerarParte')?.addEventListener('click', async () => {
+// ====== GENERAR PARTE ======
+get('btnGenerarParte')?.addEventListener('click', async () => {
   const fd = new FormData();
-  fd.append('desde',     qs('g_desde')?.value || '');
-  fd.append('hasta',     qs('g_hasta')?.value || '');
-  fd.append('oficial',   (qs('g_oficial')?.value || '').trim());
-  fd.append('suboficial',(qs('g_subof')?.value || '').trim());
+  fd.append('desde',     get('g_desde')?.value || '');
+  fd.append('hasta',     get('g_hasta')?.value || '');
+  fd.append('oficial',   (get('g_oficial')?.value || '').trim());
+  fd.append('suboficial',(get('g_subof')?.value || '').trim());
 
   const ltaRows = (typeof ltaLeerTablaActual === 'function') ? ltaLeerTablaActual() : [];
   if (ltaRows && ltaRows.length) fd.append('lta_json', JSON.stringify(ltaRows));
 
-  const info = qs('parteInfo');
+  const info = get('parteInfo');
   if (info) info.textContent = 'Generando Parte...';
 
   try {
@@ -537,11 +545,10 @@ qs('btnGenerarParte')?.addEventListener('click', async () => {
     let data;
     try { data = JSON.parse(raw); } 
     catch { throw new Error('Respuesta no JSON de generar_parte: ' + raw.slice(0,400)); }
-
     if (!data.ok) throw new Error(data.error || 'No se pudo generar el parte');
 
-    const aH = qs('lnkParteHTML');
-    const aP = qs('lnkPartePDF');
+    const aH = get('lnkParteHTML');
+    const aP = get('lnkPartePDF');
     if (aH) { aH.href = data.html; aH.classList.remove('d-none'); }
     if (aP) {
       if (data.pdf) { aP.href = data.pdf; aP.classList.remove('d-none'); }
@@ -550,7 +557,7 @@ qs('btnGenerarParte')?.addEventListener('click', async () => {
     if (info) info.textContent = `Parte generado ✔ – Turno ${data.turno || ''}`;
   } catch (err) {
     console.error('[PARTE] generar falló:', err);
-    if (qs('parteInfo')) qs('parteInfo').textContent = 'Error: ' + err.message;
+    if (get('parteInfo')) get('parteInfo').textContent = 'Error: ' + err.message;
     alert('No se pudo generar el parte:\n' + err.message);
   }
 });

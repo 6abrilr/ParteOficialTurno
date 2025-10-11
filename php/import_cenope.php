@@ -5,6 +5,10 @@ require_once __DIR__ . '/db.php';
 $autoload = dirname(__DIR__) . '/vendor/autoload.php';
 if (is_file($autoload)) require_once $autoload;
 
+/**
+ * Si tenés Poppler instalado, dejá la ruta. Si no, el script
+ * usará Smalot\PdfParser (si está en vendor) y, si no, fallará.
+ */
 $PDFTOTEXT = 'C:\\Release-25.07.0-0\\Library\\bin\\pdftotext.exe';
 
 ob_start();
@@ -40,7 +44,7 @@ try {
     if (class_exists(\Smalot\PdfParser\Parser::class)) {
       try { $text = (new \Smalot\PdfParser\Parser())->parseFile($tmp)->getText(); $src='smalot/pdfparser'; } catch (\Throwable $e) {}
     }
-    if (trim($text) === '') {
+    if (trim($text) === '' && is_file($PDFTOTEXT)) {
       [$t2] = pdf_to_text_poppler($tmp, $PDFTOTEXT);
       if ($t2 !== '') { $text = $t2; $src = 'pdftotext'; }
     }
@@ -49,7 +53,7 @@ try {
     $src_used = $src;
     $clean = normalize_text($text);
 
-    $tipo  = detectar_tipo($name, $clean); // INTERNADOS | ALTAS | FALLECIDOS
+    $tipo   = detectar_tipo($name, $clean); // INTERNADOS | ALTAS | FALLECIDOS
     $parsed = parse_cenope($clean, $tipo);
 
     if ($tipo === 'INTERNADOS') $agg['INTERNADOS'] = array_merge($agg['INTERNADOS'], $parsed['internado'] ?? []);
@@ -79,6 +83,7 @@ try {
   $toDate = fn($v)=>norm_date($v??null) ?: null;
   $cols = "(categoria,nro,grado,apellido_nombre,apellidoNombre,arma,unidad,prom,fecha,habitacion,hospital,detalle)";
 
+  // INTERNADOS
   $stI = $pdo->prepare("INSERT INTO personal_internado $cols VALUES (:cat,:nro,:gr,:ap1,:ap2,:ar,:un,:pr,:fe,:hb,:ho,:de)");
   $insI = 0;
   foreach ($agg['INTERNADOS'] as $r) {
@@ -92,6 +97,7 @@ try {
     $insI++;
   }
 
+  // ALTAS
   $stA = $pdo->prepare("INSERT INTO personal_alta $cols VALUES (:cat,:nro,:gr,:ap1,:ap2,:ar,:un,:pr,:fe,:hb,:ho,:de)");
   $insA = 0;
   foreach ($agg['ALTAS'] as $r) {
@@ -105,6 +111,7 @@ try {
     $insA++;
   }
 
+  // FALLECIDOS
   $stF = $pdo->prepare("INSERT INTO personal_fallecido $cols VALUES (:cat,:nro,:gr,:ap1,:ap2,:ar,:un,:pr,:fe,:hb,:ho,:de)");
   $insF = 0;
   foreach ($agg['FALLECIDOS'] as $r) {
@@ -132,9 +139,8 @@ try {
   echo json_encode(['ok'=>false,'type'=>get_class($e),'error'=>$e->getMessage(),'debug'=>$dbg], JSON_UNESCAPED_UNICODE);
 }
 
-/* --- Helpers --- */
+/* ===================== HELPERs ===================== */
 
-// acepta string|array (arregla strtolower())
 function detectar_tipo($filename, string $text): string {
   $f = is_array($filename) ? '' : strtolower((string)$filename);
   if ($f !== '') {
@@ -173,7 +179,8 @@ function normalize_text(string $t): string {
   $t = preg_replace('/RESERVADO/i','',$t);
   $t = preg_replace('/Powered\s+by\s+TCPDF.*/i','',$t);
   $t = preg_replace('/Página\s+\d+\s+de\s+\d+/i','', $t);
-  $t = preg_replace('/\s{2,}/',' ', $t); // mantenemos una sola separación
+  // preservamos saltos de línea para poder cortar filas
+  $t = preg_replace('/[ \t]{2,}/',' ', $t);
   $lines = array_map('rtrim', preg_split('/\r?\n/', $t));
   $lines = array_values(array_filter($lines, fn($l)=>$l!=='')); 
   return implode("\n", $lines);
@@ -206,17 +213,20 @@ function parse_cenope(string $txt, ?string $force = null): array {
       continue;
     }
 
-    // —— Parse FALLECIDOS
+    /* ================= FALLECIDOS ================= */
     if (($force===null || $force==='FALLECIDOS') && $inFallecidos) {
 
       // fila de tabla: comienza con grado
       if (preg_match('/^\s*'.$GRADOS.'\b/iu',$l)) {
 
-        // juntar varias líneas por si Lugar y Fecha están partidos
+        // juntar algunas líneas pero CORTAR si detecto el comienzo de otra fila
         $buf = $l;
-        for ($k=1;$k<=4 && ($i+$k)<$n;$k++) {
-          if (preg_match('/^\s*[3-9]\.\s*PERSONAL\b/iu',$lines[$i+$k])) break;
-          $buf .= ' '.$lines[$i+$k];
+        for ($k=1; $k<=6 && ($i+$k)<$n; $k++) {
+          $nxt = $lines[$i+$k];
+          if (preg_match('/^\s*'.$GRADOS.'\b/iu',$nxt)) break;                 // otro grado = otra fila
+          if (preg_match('/^\s*(\d{1,4}|CAMA\s+[A-Z]|UTI)\b/iu',$nxt)) break;  // nuevo PISO/HAB/CAMA o sección
+          if (preg_match('/^\s*[3-9]\.\s*PERSONAL\b/iu',$nxt)) break;          // otra sección
+          $buf .= ' '.$nxt;
         }
         $buf = preg_replace('/\s{2,}/',' ',$buf);
 
@@ -227,45 +237,48 @@ function parse_cenope(string $txt, ?string $force = null): array {
 
         // 2) arma (abreviatura conocida)
         $arma = null;
-        if (preg_match('/^\s*(COM|INF|ART|CAB|ING|INT|SAN|AR|GNA|FAA)/iu',$rest,$ma, PREG_OFFSET_CAPTURE)) {
+        if (preg_match('/^\s*(COM|INF|ART|CAB|ING|INT|SAN|AR|GNA|FAA|I|A|Bda|Bde|Bda|Bda)/iu',$rest,$ma, PREG_OFFSET_CAPTURE)) {
           $arma = strtoupper($ma[1][0]);
           $rest = trim(substr($rest, $ma[0][1] + strlen($ma[0][0])));
         }
 
         // 3) destino / situación de revista (Retirado | En Actividad | …)
         $destino = null;
-        if (preg_match('/^\s*(Retirado|En Actividad|En actividad|Situaci[oó]n.*?|[A-Za-zÁÉÍÓÚÑ\/ ]{3,20})/u',$rest,$md, PREG_OFFSET_CAPTURE)) {
-          $destino = trim($md[1][0]);
+        if (preg_match('/^\s*(Retirado|En Actividad)\b/iu',$rest,$md, PREG_OFFSET_CAPTURE)) {
+          $destino = $md[1][0];
           $rest = trim(substr($rest, $md[0][1] + strlen($md[0][0])));
         }
 
-        // 4) VGM (SI|NO) → lo saltamos
+        // 4) VGM (SI|NO) → lo saltamos si está
         if (preg_match('/^\s*(SI|NO)\b/iu',$rest,$mv, PREG_OFFSET_CAPTURE)) {
           $rest = trim(substr($rest, $mv[0][1] + strlen($mv[0][0])));
         }
 
-        // 5) Apellido y Nombre (palabras Capitalizadas)
+        // 5) Apellido y Nombre (tolerante: mayúsculas, mixto y conectores DE/DEL/LA/LOS/LAS)
         $nombre = null;
-        if (preg_match('/^([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,5})/u',$rest,$mn, PREG_OFFSET_CAPTURE)) {
+        if (preg_match('/^([A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+(?:\s+(?:[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚÑáéíóúñ]+|DE|DEL|LA|LOS|LAS)){1,6})\b/u',$rest,$mn, PREG_OFFSET_CAPTURE)) {
           $nombre = trim($mn[1][0]);
           $rest = trim(substr($rest, $mn[0][1] + strlen($mn[0][0])));
+        } else {
+          // Fallback: tomar primeras 3–4 palabras antes de que aparezca algo tipo "Av ", "Velatorio", "Sepelio", o una fecha
+          if (preg_match('/^(.+?)(?=\s+(?:Av\b|VELATORIO|SEPELIO|\d{1,2}[A-Za-z]{3}\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})|\s*$)/iu',$rest,$mf)) {
+            $nombre = trim($mf[1]);
+            $rest   = trim(substr($rest, strlen($mf[0])));
+          }
         }
 
-        // 6) Lugar y Fecha: tomar última fecha y el lugar = resto sin esa fecha
+        // 6) Lugar y Fecha: fecha → “ddMesYY” o “dd/mm/aaaa” etc. El resto = lugar
         $fecha = extrae_fecha($rest); // remueve la fecha del $rest si existe
         $lugar = trim($rest);
-        if ($fecha) {
-          // borro posibles números pegados a la fecha (horario 251930Sep25 → 30Sep25)
-          if (preg_match('/(\d{1,2}[A-Za-z]{3}\d{2})/',$fecha,$mf)) $fecha = $mf[1];
-        }
+        if ($fecha && preg_match('/(\d{1,2}[A-Za-z]{3}\d{2})/',$fecha,$mf)) $fecha = $mf[1];
 
-        // 7) Velatorio y Sepelio → muchas veces “A determinar”
+        // 7) Velatorio / Sepelio (si están)
         $velatorio = (stripos($buf,'VELATORIO')!==false && stripos($buf,'A determinar')!==false) ? 'A determinar' : null;
         $sepelio   = (stripos($buf,'SEPELIO')!==false   && stripos($buf,'A determinar')!==false) ? 'A determinar' : null;
 
-        // Detalle armado
+        // Detalle
         $detParts = [];
-        if ($lugar) $detParts[] = 'Falleció en ' . $lugar . ($fecha ? " el $fecha" : '');
+        if ($lugar) $detParts[] = 'Falleció en – ' . $lugar . ($fecha ? " el $fecha" : '');
         if ($velatorio) $detParts[] = "Velatorio: $velatorio";
         if ($sepelio)   $detParts[] = "Sepelio: $sepelio";
         $detalle = $detParts ? implode('. ', $detParts) : null;
@@ -286,39 +299,64 @@ function parse_cenope(string $txt, ?string $force = null): array {
         if (pasaFiltroCom($row)) $outF[] = $row;
       }
 
-      // fin del bloque de tabla si aparece otra sección grande
       if (preg_match('/^\s*[3-9]\.\s*PERSONAL\b/iu',$l)) { $inFallecidos = false; }
       continue;
     }
 
-    // —— INTERNADOS / ALTAS
+    /* ============ INTERNADOS / ALTAS ============ */
     if (!$cat || !$modo) continue;
     if ($force && $force !== $modo) continue;
 
     if (preg_match('/\b'.$GRADOS.'\b/i',$l,$gm, PREG_OFFSET_CAPTURE)) {
-      $buf = $l; for ($k=1;$k<=5 && ($i+$k)<$n;$k++) $buf .= ' '.$lines[$i+$k];
+
+      // buffer de 1 fila (corta cuando detecta siguiente)
+      $buf = $l;
+      for ($k=1; $k<=6 && ($i+$k)<$n; $k++) {
+        $nxt = $lines[$i+$k];
+        if (preg_match('/^\s*'.$GRADOS.'\b/iu',$nxt)) break;                 // nuevo grado
+        if (preg_match('/^\s*(\d{1,4}|CAMA\s+[A-Z]|UTI)\b/iu',$nxt)) break;  // PISO/HAB o sección
+        if (preg_match('/^\s*[3-9]\.\s*PERSONAL\b/iu',$nxt)) break;
+        $buf .= ' '.$nxt;
+      }
       $buf = preg_replace('/\s{2,}/',' ',$buf);
 
+      // Fecha (si está)
       $fecha = extrae_fecha($buf);
       $hab   = extrae_hab($buf);
-      $hosp  = guess_hospital(preg_split('/\s+/',$buf));
 
+      // grado y resto
       if (!preg_match('/\b'.$GRADOS.'\b/i',$buf,$m2, PREG_OFFSET_CAPTURE)) continue;
       $gradoRaw = $m2[0][0];
       $grado = strtoupper(preg_replace('/[^A-Z]/','',$gradoRaw));
       $post = trim(substr($buf, $m2[0][1] + strlen($m2[0][0])));
 
+      // split antes de “En Actividad/Retirado” para aislar nombre/arma
       $revCut  = preg_split('/\b(En Actividad|Retirado)\b/i', $post, 2, PREG_SPLIT_DELIM_CAPTURE);
-      $pre     = trim($revCut[0] ?? ''); $postRev = trim($revCut[2] ?? '');
+      $pre     = trim($revCut[0] ?? '');
+      $postRev = isset($revCut[1]) ? ($revCut[1] . ' ' . trim($revCut[2] ?? '')) : '';
 
-      $destino = '';
-      if ($postRev !== '' && preg_match('/-\s*([^0-9]{2,}?)(?:\s*\(U\d+\))?/i',$postRev,$md)) $destino = trim($md[1]);
-
+      // Arma = último token corto del pre; Nombre = resto
       $tokens = preg_split('/\s+/', $pre);
       $arma = array_pop($tokens) ?? '';
       while (!empty($tokens) && mb_strlen($arma)<=4 && mb_strlen(end($tokens))<=4) { $arma = array_pop($tokens).' '.$arma; }
       $nombre = trim(implode(' ', $tokens));
       if ($nombre==='') continue;
+
+      // Destino: “En Actividad - …” o “Retirado - …” (NO cortar ‘Com M 6 (Uxxxx)’)
+      $destino = null;
+      if ($postRev !== '') {
+        // ej: "En Actividad - Ca Com M 6 (U2219) Clinica Pasteur …"
+        if (preg_match('/^(En\s+Actividad|Retirado)\s*(?:-\s*([^\n]+?))?(?=$|\s{2,}|Clinica|Cl[ií]nica|Hospital|Sanatorio|HM\s*Central|HMC|\d{1,2}[A-Za-z]{3}\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/iu', $postRev, $md)) {
+          $base = trim($md[1]);
+          $tail = isset($md[2]) ? trim($md[2]) : '';
+          $destino = $tail ? ($base.' - '.$tail) : $base;
+        } else {
+          $destino = trim($postRev);
+        }
+      }
+
+      // Hospital (Nosocomio / Clínica / Hospital / HM Central / HMC / Sanatorio …)
+      $hospital = extract_hospital($buf);
 
       $row = [
         'categoria' => map_cat($cat),
@@ -330,8 +368,9 @@ function parse_cenope(string $txt, ?string $force = null): array {
         'Prom' => null,
         'Fecha' => $fecha,
         'Habitación' => $hab,
-        'Hospital' => $hosp,
+        'Hospital' => $hospital,
       ];
+
       if (pasaFiltroCom($row)) {
         if ($modo==='INTERNADOS') $outI[]=$row;
         if ($modo==='ALTAS')      $outA[]=$row;
@@ -339,6 +378,7 @@ function parse_cenope(string $txt, ?string $force = null): array {
     }
   }
 
+  // Orden por grado
   $rank = [
     'TG'=>0,'GD'=>0.1,'GB'=>0.2,'CY'=>0.5,
     'CR'=>1,'TC'=>2,'MY'=>3,'CT'=>4,'TP'=>5,'TT'=>6,'ST'=>7,
@@ -357,6 +397,8 @@ function parse_cenope(string $txt, ?string $force = null): array {
   return ['internado'=>$outI,'alta'=>$outA,'fallecido'=>$outF];
 }
 
+/* ===== lógicas auxiliares ===== */
+
 function pasaFiltroCom(array $r): bool {
   $cat = $r['categoria']; $arma = strtoupper($r['Arma'] ?? ''); $dest = strtoupper($r['Unidad'] ?? '');
   if ($cat==='OFICIALES' || $cat==='SUBOFICIALES' || $cat==='FALLECIDOS') return (strpos($arma,'COM') !== false);
@@ -367,6 +409,7 @@ function esUnidadCom(string $dest): bool {
   $pat = '/\b(B\s*MANT\s*COM|BAT\s*COM|BATALL[ÓO]N\s+DE\s+COM|BCOM|CA\s*COM|CIA\s*COM|BRIG\s*COM|COMUNICACIONES\b)\b/u';
   return (bool)preg_match($pat, $dest);
 }
+
 function extrae_fecha(string &$s): ?string {
   if (preg_match('/(\d{1,2}[A-Za-z]{3}\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/',$s,$m,PREG_OFFSET_CAPTURE)) {
     $pos=$m[0][1]; $len=strlen($m[0][0]); $s = trim(substr($s,0,$pos).' '.substr($s,$pos+$len)); return $m[0][0];
@@ -383,13 +426,29 @@ function map_cat(string $s): string {
   if (str_starts_with($s,'SUBOFI')) return 'SUBOFICIALES';
   return 'SOLDADOS VOLUNTARIOS';
 }
-function guess_hospital(array $cols): ?string {
-  $s = strtoupper(implode(' ', array_slice($cols, -5)));
-  foreach (['CENTRAL','CAMPO DE MAYO','CORDOBA','MENDOZA','PARANA','BAHIA BLANCA','RIO GALLEGOS','SALTA','CURUZU CUATIA','COMODORO RIVADAVIA','HOSPITAL REGIONAL','SANATORIO COLEGIALES'] as $h) {
-    if (str_contains($s,$h)) return $h;
+
+function extract_hospital(string $buf): ?string {
+  // “Nosocomio: …”
+  if (preg_match('/NOSOCOMIO\s*[:\-]?\s*([A-ZÁÉÍÓÚÑ\. \-]{3,})/iu', $buf, $m)) {
+    return trim($m[1]);
+  }
+  // Clínica / Sanatorio / Hospital …
+  if (preg_match('/CL[IÍ]NICA\s+[A-ZÁÉÍÓÚÑ ]{2,}/iu', $buf, $m))  return trim($m[0]);
+  if (preg_match('/SANATORIO\s+[A-ZÁÉÍÓÚÑ ]{2,}/iu', $buf, $m))    return trim($m[0]);
+  if (preg_match('/HOSPITAL\s+[A-ZÁÉÍÓÚÑ ]{2,}/iu', $buf, $m))     return trim($m[0]);
+
+  // HM Central, HMC, Hospital Militar Central
+  if (preg_match('/\bHM\s*CENTRAL\b/i', $buf)) return 'HOSPITAL MILITAR CENTRAL';
+  if (preg_match('/\bHMC\b/i', $buf))         return 'HOSPITAL MILITAR CENTRAL';
+  if (preg_match('/HOSPITAL\s+MILITAR\s+CENTRAL/i', $buf)) return 'HOSPITAL MILITAR CENTRAL';
+
+  // Ciudades que suelen aparecer aisladas (último recurso)
+  foreach (['RIO GALLEGOS','EL CALAFATE','COMODORO RIVADAVIA','CURUZU CUATIA','MENDOZA','PARANA','BAHIA BLANCA','SALTA'] as $c) {
+    if (stripos($buf, $c)!==false) return $c;
   }
   return null;
 }
+
 function norm_date(?string $s): ?string {
   if(!$s) return null;
   if (preg_match('/^(\d{1,2})([A-Za-z]{3})(\d{2})$/',$s,$m)) {

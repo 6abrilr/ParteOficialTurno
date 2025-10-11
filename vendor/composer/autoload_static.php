@@ -11,9 +11,15 @@ class ComposerStaticInitade4e51343e54661c8c51e41ed40fbfc
     );
 
     public static $prefixLengthsPsr4 = array (
+        't' => 
+        array (
+            'thiagoalessio\\TesseractOCR\\' => 27,
+        ),
         'S' => 
         array (
             'Symfony\\Polyfill\\Mbstring\\' => 26,
+            'Symfony\\Component\\Process\\' => 26,
+            'Spatie\\PdfToText\\' => 17,
         ),
         'P' => 
         array (
@@ -27,9 +33,21 @@ class ComposerStaticInitade4e51343e54661c8c51e41ed40fbfc
     );
 
     public static $prefixDirsPsr4 = array (
+        'thiagoalessio\\TesseractOCR\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/thiagoalessio/tesseract_ocr/src',
+        ),
         'Symfony\\Polyfill\\Mbstring\\' => 
         array (
             0 => __DIR__ . '/..' . '/symfony/polyfill-mbstring',
+        ),
+        'Symfony\\Component\\Process\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/symfony/process',
+        ),
+        'Spatie\\PdfToText\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/spatie/pdf-to-text/src',
         ),
         'PhpOffice\\PhpWord\\' => 
         array (
