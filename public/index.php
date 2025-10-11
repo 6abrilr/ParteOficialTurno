@@ -1,6 +1,8 @@
 <?php
 // public/index.php
+declare(strict_types=1);
 date_default_timezone_set('America/Argentina/Buenos_Aires');
+
 require_once __DIR__ . '/../php/auth/bootstrap.php';
 require_login();
 ?>
@@ -67,13 +69,24 @@ require_login();
     }
     .mesh.mesh--left{ left:-260px; top:180px; right:auto; transform:scaleX(-1) rotate(3deg); }
 
-    /* ===== Hero ===== */
+    /* ===== Hero (encabezado) ===== */
     .brand-hero{ position:relative; padding:28px 0 90px; color:#e9f2ff; isolation:isolate; }
-    .hero-inner{ display:flex; align-items:center; gap:14px; }
+    .hero-inner{ display:flex; align-items:flex-start; gap:14px; }
+    .hero-left{ display:flex; align-items:center; gap:14px; }
     .brand-logo{ width:56px; height:56px; object-fit:contain; flex:0 0 auto; filter:drop-shadow(0 2px 10px rgba(124,196,255,.30)); }
     .brand-title{ font-weight:800; letter-spacing:.4px; font-size:28px; line-height:1.1; text-shadow:0 2px 16px rgba(30,123,220,.45); }
     .brand-sub{ font-size:16px; opacity:.9; border-top:2px solid rgba(124,196,255,.35); display:inline-block; padding-top:4px; margin-top:2px; }
-    .brand-year{ font-size:28px; font-weight:700; opacity:.85; }
+
+    .hero-right{
+      margin-left:auto;
+      display:flex;
+      flex-direction:column;   /* Año arriba, acciones abajo */
+      align-items:flex-end;
+      gap:6px;
+    }
+    .brand-year{ font-size:22px; font-weight:700; opacity:.9; line-height:1; }
+    .hero-actions{ display:flex; align-items:center; gap:8px; }
+
     .main-wrap{ margin-top:-46px; }
 
     /* ===== UI ===== */
@@ -107,7 +120,6 @@ require_login();
 
     @media (max-width:576px){
       .brand-title{ font-size:22px; }
-      .brand-year{ font-size:22px; }
       .card .card-body{ padding:14px; }
       .form-control{ height:40px; }
     }
@@ -119,19 +131,32 @@ require_login();
   <span class="mesh"></span>
   <span class="mesh mesh--left"></span>
 
+  <!-- Encabezado -->
   <header class="brand-hero">
     <div class="hero-inner container">
-      <img class="brand-logo" src="img/escudo602sinfondo.png" alt="Escudo 602">
-      <div>
-        <div class="brand-title">Batallón de Comunicaciones 602</div>
-        <div class="brand-sub">“Hogar de las Comunicaciones fijas del Ejército”</div>
-      </div>
-      <div class="brand-year ms-2"><?= date('Y'); ?></div>
 
-      <?php $u = user(); ?>
-      <div class="d-flex align-items-center gap-2 mb-3">
-        <span>Hola, <?= h($u['nombre'] ?? $u['email']) ?></span>
-        <a class="btn btn-outline-secondary btn-sm" href="<?= h(url('logout.php')) ?>">Salir</a>
+      <!-- Izquierda: escudo + título -->
+      <div class="hero-left">
+        <img class="brand-logo" src="img/escudo602sinfondo.png" alt="Escudo 602">
+        <div>
+          <div class="brand-title">Batallón de Comunicaciones 602</div>
+          <div class="brand-sub">“Hogar de las Comunicaciones fijas del Ejército”</div>
+        </div>
+      </div>
+
+      <!-- Derecha: año arriba, acciones abajo -->
+      <div class="hero-right">
+        <div class="brand-year"><?= date('Y'); ?></div>
+
+        <div class="hero-actions">
+          <?php if (function_exists('user_has_role') && user_has_role('admin')): ?>
+            <a class="btn btn-outline-light btn-sm" href="<?= h(url('admin.php')) ?>">← Volver al panel</a>
+          <?php endif; ?>
+
+          <?php $u = user(); ?>
+          <span class="text-light">Hola, <?= h($u['nombre'] ?? $u['email']) ?></span>
+          <a class="btn btn-outline-secondary btn-sm" href="<?= h(url('logout.php')) ?>">Salir</a>
+        </div>
       </div>
 
     </div>

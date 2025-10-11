@@ -106,6 +106,18 @@ $ASSETS = rtrim($BASE, '/') . '/public';
         </div>
       </div>
 
+      <!-- Partes de Novedades -->
+      <div class="col-sm-6 col-lg-4">
+        <div class="card h-100">
+          <div class="card-body">
+            <h5 class="card-title">Partes de Novedades</h5>
+            <p class="card-text">Listado de partes guardados, con filtros por fecha y oficial.</p>
+            <a class="btn btn-primary" href="<?= h($BASE) ?>/partes.php">Ver partes</a>
+          </div>
+        </div>
+      </div>
+
+
       <div class="col-sm-6 col-lg-4">
         <div class="card h-100">
           <div class="card-body">
