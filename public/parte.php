@@ -3,16 +3,16 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../php/db.php';
-
 date_default_timezone_set('America/Argentina/Buenos_Aires');
 
-/* ====== LOG habilitado ====== */
-// Crea /logs si no existe
-$logDir = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'logs';
-if (!is_dir($logDir)) { @mkdir($logDir, 0775, true); }
-ini_set('log_errors', '1');
-ini_set('error_log', $logDir . DIRECTORY_SEPARATOR . 'parte.log');
-error_reporting(E_ALL);
+/* ====== LOG sencillo ====== */
+$LOGDIR = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'logs';
+if (!is_dir($LOGDIR)) { @mkdir($LOGDIR, 0775, true); }
+$LOGFILE = $LOGDIR . DIRECTORY_SEPARATOR . 'parte';
+function plog(string $m): void {
+  global $LOGFILE;
+  @file_put_contents($LOGFILE, '['.date('d-M-Y H:i:s e').'] '.$m.PHP_EOL, FILE_APPEND);
+}
 
 /* ===== Helpers ===== */
 function h($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
@@ -30,7 +30,7 @@ function rango_es(string $desde, string $hasta): string {
   $d1=(int)$a->format('j'); $m1=(int)$a->format('n'); $y1=(int)$a->format('Y');
   $d2=(int)$b->format('j'); $m2=(int)$b->format('n'); $y2=(int)$b->format('Y');
   if ($y1 === $y2 && $m1 === $m2) return "{$d1} al {$d2} de ".mes_es($m1)." de {$y1}";
-  if ($y1 === $y2)           return "{$d1} de ".mes_es($m1)." al {$d2} de ".mes_es($m2)." de {$y1}";
+  if ($y1 === $y2)               return "{$d1} de ".mes_es($m1)." al {$d2} de ".mes_es($m2)." de {$y1}";
   return "{$d1} de ".mes_es($m1)." de {$y1} al {$d2} de ".mes_es($m2)." de {$y2}";
 }
 function filename_safe(string $s): string {
@@ -40,26 +40,14 @@ function filename_safe(string $s): string {
   $s = preg_replace('/\s+/', ' ', $s);
   return trim($s, ". ");
 }
-// usuario actual (si hay sesión)
 function current_user_id(): ?int {
-  if (session_status() !== PHP_SESSION_ACTIVE) {
-    @session_name('POTSESSID');
-    @session_start();
-  }
+  if (session_status() !== PHP_SESSION_ACTIVE) { @session_name('POTSESSID'); @session_start(); }
   return isset($_SESSION['user']['id']) ? (int)$_SESSION['user']['id'] : null;
 }
-
-/** Guardar/actualizar registro en partes (sin IGNORE, con UPSERT) */
-function save_parte_record(PDO $pdo, array $enc, string $desde, string $hasta, string $titulo, string $fileRel): void {
-  $sql = "INSERT INTO partes
-            (fecha_desde, fecha_hasta, oficial_turno, suboficial_turno, titulo, file_rel_path, created_by)
-          VALUES (?,?,?,?,?,?,?)
-          ON DUPLICATE KEY UPDATE
-            titulo = VALUES(titulo),
-            oficial_turno = VALUES(oficial_turno),
-            suboficial_turno = VALUES(suboficial_turno),
-            created_by = VALUES(created_by)";
-  $stmt = $pdo->prepare($sql);
+function save_parte_record(PDO $pdo, array $enc, string $desde, string $hasta, string $titulo, string $fileRel): int {
+  $stmt = $pdo->prepare("INSERT INTO partes
+    (fecha_desde, fecha_hasta, oficial_turno, suboficial_turno, titulo, file_rel_path, created_by)
+    VALUES (?,?,?,?,?,?,?)");
   $stmt->execute([
     $desde, $hasta,
     $enc['oficial_turno'] ?? null,
@@ -68,37 +56,32 @@ function save_parte_record(PDO $pdo, array $enc, string $desde, string $hasta, s
     $fileRel,
     current_user_id()
   ]);
-  error_log("save_parte_record: OK file_rel_path={$fileRel}");
+  return (int)$pdo->lastInsertId();
 }
 
 /* ===== Parámetros ===== */
 $desde = $_GET['desde'] ?? '';
 $hasta = $_GET['hasta'] ?? '';
-if (!$desde || !$hasta) { http_response_code(400); die('Faltan parámetros desde/hasta'); }
-
 $wantPdf  = !empty($_GET['pdf']);
 $wantSave = !empty($_GET['save']);
-$silent   = !empty($_GET['silent']);          // fetch silencioso desde la UI
-$showUi   = !$wantPdf && !$wantSave;          // vista normal
+$silent   = !empty($_GET['silent']);     // fetch silencioso
+$showUi   = !$wantPdf && !$wantSave;     // vista HTML
 
-$tituloCustom = trim((string)($_GET['titulo'] ?? ''));
-$tituloHumano = $tituloCustom !== ''
-  ? $tituloCustom
-  : "Parte de novedades del Arma de Comunicaciones del dia " . rango_es($desde, $hasta);
+plog("parte.php init  desde={$desde}  hasta={$hasta}  wantPdf=".($wantPdf?'1':'')."  wantSave=".($wantSave?'1':'')."  silent=".($silent?'1':''));
 
-error_log("parte.php init  desde={$desde}  hasta={$hasta}  wantPdf={$wantPdf} wantSave={$wantSave} silent={$silent}");
+if (!$desde || !$hasta) {
+  http_response_code(400);
+  echo 'Faltan parámetros desde/hasta';
+  plog('ERROR: faltan parámetros');
+  exit;
+}
 
 /* ===== DB ===== */
 $pdo = db();
 $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-/* Encabezado */
-$enc = $pdo->prepare("
-  SELECT * FROM parte_encabezado
-  WHERE fecha_desde = ? AND fecha_hasta = ?
-  ORDER BY id DESC LIMIT 1
-");
+/* Encabezado del parte */
+$enc = $pdo->prepare("SELECT * FROM parte_encabezado WHERE fecha_desde = ? AND fecha_hasta = ? ORDER BY id DESC LIMIT 1");
 $enc->execute([$desde, $hasta]);
 $enc = $enc->fetch() ?: [
   'oficial_turno'    => '',
@@ -107,29 +90,19 @@ $enc = $enc->fetch() ?: [
   'fecha_hasta'      => $hasta,
 ];
 
-/* Pendientes */
-$sqlPend = "SELECT n.*, c.nombre AS categoria
-            FROM novedad n
-            JOIN categoria c ON c.id = n.categoria_id
-            WHERE n.estado <> 'RESUELTO'
-            ORDER BY n.prioridad DESC, n.fecha_inicio DESC";
-$pendientes = $pdo->query($sqlPend)->fetchAll();
-
-/* CENOPE */
+/* Datos del informe */
 function col(array $r, string $a, ?string $b=null) { return $r[$a] ?? ($b && isset($r[$b]) ? $r[$b] : null); }
 $ordenGrado = "FIELD(grado,'TG','GD','GB','CY','CR','TC','MY','CT','TP','TT','ST','SM','SP','SA','SI','SG','CI','CB','VP','VS','SV','SOLD')";
 $pi = $pdo->query("SELECT * FROM personal_internado ORDER BY categoria, $ordenGrado, apellido_nombre, apellidoNombre")->fetchAll();
 $pa = $pdo->query("SELECT * FROM personal_alta      ORDER BY categoria, $ordenGrado, apellido_nombre, apellidoNombre")->fetchAll();
 $pf = $pdo->query("SELECT * FROM personal_fallecido ORDER BY id DESC")->fetchAll();
 function groupByKey(array $rows, string $key): array { $g=[]; foreach($rows as $r){ $g[$r[$key]][]=$r; } return $g; }
-$piG = groupByKey($pi, 'categoria');
-$paG = groupByKey($pa, 'categoria');
+$piG = groupByKey($pi, 'categoria'); $paG = groupByKey($pa, 'categoria');
 
-/* Estados */
 $estados = $pdo->query("SELECT * FROM sistema_estado ORDER BY categoria_id, nombre")->fetchAll();
 $estGrp  = []; foreach ($estados as $r) { $estGrp[$r['categoria_id']][] = $r; }
 
-/* Render genérico */
+/* tiny renderers */
 function render_table(array $headers, callable $rowRenderer, array $rows, string $emptyLabel='SIN NOVEDAD'){
   echo "<div class='table-responsive'><table class='table table-sm table-bordered'><thead><tr>";
   foreach($headers as $h) echo "<th>".h($h)."</th>";
@@ -150,6 +123,11 @@ function render_estado_tabla(array $rows, array $cols){
 }
 
 /* ===== Buffer HTML ===== */
+$tituloHumano = trim((string)($_GET['titulo'] ?? ''));
+if ($tituloHumano==='') {
+  $tituloHumano = "Parte de novedades del Arma de Comunicaciones del dia " . rango_es($desde, $hasta);
+}
+
 ob_start();
 ?>
 <!doctype html>
@@ -163,12 +141,7 @@ ob_start();
 <link rel="shortcut icon" href="img/escudo602sinfondo.png">
 <style>
   @page { size: A4; margin: 18mm 16mm; }
-  :root{
-    --fg:#000; --grid:#000; --thead:#f2f2f2;
-    --fz-ea:16pt; --fz-bco:14pt; --fz-motto:12pt; --fz-h2:13pt;
-    --fz-turno-fecha:12pt; --fz-turno-personal:12pt;
-    --enc-left-shift:10mm;
-  }
+  :root{ --fg:#000; --grid:#000; --thead:#f2f2f2; --fz-ea:16pt; --fz-bco:14pt; --fz-motto:12pt; --fz-h2:13pt; --fz-turno-fecha:12pt; --fz-turno-personal:12pt; --enc-left-shift:10mm; }
   html,body{ background:#fff !important; }
   body{ margin:0; color:var(--fg); font-family:"Times New Roman", Times, serif; font-size:12pt; line-height:1.25; -webkit-print-color-adjust:exact; print-color-adjust:exact; padding:24px; }
   .enc-top{ display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:8px; }
@@ -186,8 +159,13 @@ ob_start();
   .table th,.table td{ border:.6pt solid var(--grid)!important; padding:2.5mm 2mm; vertical-align:top; word-wrap:break-word; }
   .table thead th{ background:var(--thead); font-weight:700; text-transform:uppercase; }
   .table-responsive{ overflow:visible !important; }
+  .table tbody td:nth-child(1), .table tbody td:nth-child(2){ text-align:center; white-space:nowrap; width:12mm; }
+  .table tbody td:nth-child(7), .table tbody td:nth-child(8){ white-space:nowrap; width:22mm; }
   .tbl-fallecidos{ table-layout:auto; }
   .tbl-fallecidos td:nth-child(7), .tbl-fallecidos th:nth-child(7){ width:auto; white-space:normal; word-break:break-word; }
+  .tbl-fallecidos td:nth-child(1){ width:10mm; text-align:center; white-space:nowrap; }
+  .tbl-fallecidos td:nth-child(2){ width:14mm; text-align:center; white-space:nowrap; }
+  .tbl-fallecidos td:nth-child(4), .tbl-fallecidos td:nth-child(5), .tbl-fallecidos td:nth-child(6){ width:22mm; white-space:nowrap; }
   .ref-table{ table-layout:fixed; width:100%; margin-top:2mm; }
   .ref-table td{ text-align:center; font-weight:700; vertical-align:middle; }
   .ref-table col{ width:33.333%; }
@@ -195,12 +173,7 @@ ob_start();
   .ref-table td.ref-upd{ background:#fff3cd !important; color:#000; }
   .ref-table td.ref-res{ background:#d1e7dd !important; color:#000; }
   .ref-box{ display:block; padding:3mm 2mm; text-transform:uppercase; line-height:1.1; }
-  @media print{
-    body{ font-size:10pt; }
-    .table{ table-layout:auto; }
-    .table thead th{ background:#efefef !important; }
-    .no-print{ display:none !important; }
-  }
+  @media print{ body{ font-size:10pt; } .table{ table-layout:auto; } .table thead th{ background:#efefef !important; } .no-print{ display:none !important; } }
 </style>
 </head>
 <body>
@@ -296,7 +269,6 @@ if (!$pf){
 }
 ?>
 
-<!-- ===== Referencia ===== -->
 <h4 class="mt-4">REFERENCIA</h4>
 <table class="table table-sm table-bordered ref-table">
   <colgroup><col><col><col></colgroup>
@@ -309,7 +281,6 @@ if (!$pf){
   </tbody>
 </table>
 
-<!-- ===== Sistemas ===== -->
 <h4 class="mt-3">SISTEMAS – SERVICIOS</h4>
 <?php render_estado_tabla($estGrp[2] ?? [], ['SISTEMA','FECHA','NOVEDADES']); ?>
 
@@ -325,16 +296,13 @@ if (!$pf){
 <h4 class="mt-3">SISTEMAS – SITM2</h4>
 <?php render_estado_tabla($estGrp[6] ?? [], ['SISTEMA','FECHA','NOVEDADES']); ?>
 
-<!-- ===== LTA (placeholder) ===== -->
-<h3 class="mt-4">LTA</h3>
-<?php
-// AÚN NO hay backend para LTA; se deja placeholder para que aparezca la mesa.
-render_table(['Detalle'], function($r){ return '<tr><td></td></tr>'; }, [], 'SIN NOVEDAD / Aún no cargado desde la UI');
-?>
-
-<!-- ===== Pendientes ===== -->
 <h4 class="mt-4">PENDIENTES AL CIERRE</h4>
 <?php
+$pendientes = $pdo->query("SELECT n.*, c.nombre AS categoria
+            FROM novedad n
+            JOIN categoria c ON c.id = n.categoria_id
+            WHERE n.estado <> 'RESUELTO'
+            ORDER BY n.prioridad DESC, n.fecha_inicio DESC")->fetchAll();
 $headersPend = ['Inicio','Categoría','Título','Prioridad','Estado'];
 $renderRowPend = function($p){
   return "<tr>"
@@ -352,19 +320,6 @@ render_table($headersPend, $renderRowPend, $pendientes);
 <div class="no-print mt-3 d-flex gap-2">
   <button class="btn btn-outline-secondary" onclick="window.print()">Imprimir / Guardar PDF</button>
 </div>
-<?php
-  // URL para auto-guardar silencioso
-  $saveUrl = '?' . http_build_query([
-    'desde'=>$desde, 'hasta'=>$hasta, 'titulo'=>$tituloHumano,
-    'save'=>1, 'silent'=>1
-  ]);
-?>
-<script>
-  // Guarda una copia en servidor automáticamente, sin interrumpir al usuario
-  (function(){
-    fetch('<?= h($saveUrl) ?>', {credentials: 'same-origin'}).catch(()=>{});
-  })();
-</script>
 <?php endif; ?>
 
 </body>
@@ -373,14 +328,27 @@ render_table($headersPend, $renderRowPend, $pendientes);
 /* ===== fin HTML ===== */
 $html = ob_get_clean();
 
-/* Si no pidieron PDF/guardar, devolvemos HTML */
-if ($showUi) { echo $html; exit; }
+/* Si no pidieron PDF/guardar, devolvemos HTML y (en 2º request) disparamos el guardado silencioso */
+if ($showUi) {
+  echo $html;
+
+  $qs = http_build_query([
+    'desde'=>$desde,'hasta'=>$hasta,'titulo'=>$tituloHumano,
+    'save'=>1,'silent'=>1
+  ]);
+  echo "\n<script>fetch('parte.php?".$qs."',{credentials:'same-origin'}).catch(()=>{});</script>\n";
+  exit;
+}
 
 /* ===== Rutas de salida ===== */
 $base        = app_base_simple();
 $rootFs      = realpath(__DIR__ . '/..');
 $dirPartesFs = $rootFs . DIRECTORY_SEPARATOR . 'files' . DIRECTORY_SEPARATOR . 'partes';
-if (!is_dir($dirPartesFs)) { @mkdir($dirPartesFs, 0775, true); }
+if (!is_dir($dirPartesFs)) {
+  $mk = @mkdir($dirPartesFs, 0775, true);
+  plog("mkdir {$dirPartesFs} => ".($mk?'ok':'fail'));
+  @file_put_contents($dirPartesFs.DIRECTORY_SEPARATOR.'._test_write', 'ok');
+}
 
 $fnBaseHuman = filename_safe($tituloHumano);
 $pdfFs  = $dirPartesFs . DIRECTORY_SEPARATOR . $fnBaseHuman . '.pdf';
@@ -389,20 +357,11 @@ $htmlFs = $dirPartesFs . DIRECTORY_SEPARATOR . $fnBaseHuman . '.html';
 $webPartes = rtrim($base, '/') . '/files/partes';
 $pdfUrl    = $webPartes . '/' . rawurlencode($fnBaseHuman . '.pdf');
 
-// Rutas **relativas** para DB
 $fileRelPdf  = 'files/partes/' . $fnBaseHuman . '.pdf';
 $fileRelHtml = 'files/partes/' . basename($htmlFs);
 
-// chequeo permisos
-$writable = is_dir($dirPartesFs) && is_writable($dirPartesFs);
-error_log("Salida dir={$dirPartesFs}  writable=" . ($writable?'1':'0'));
-
 /* ===== Motores PDF ===== */
-function try_autoload_vendor(): void {
-  $autoload = __DIR__ . '/../vendor/autoload.php';
-  if (is_file($autoload)) { require_once $autoload; error_log('Autoload vendor OK'); }
-  else { error_log('Autoload vendor NO encontrado'); }
-}
+function try_autoload_vendor(): void { $autoload = __DIR__ . '/../vendor/autoload.php'; if (is_file($autoload)) require_once $autoload; }
 function find_wkhtmltopdf(): ?string {
   $candidates = [
     'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe',
@@ -423,12 +382,11 @@ function save_pdf_with_wkhtml(string $html, string $pdfPath): bool {
        . escapeshellarg($tmp) . ' ' . escapeshellarg($pdfPath) . ' 2>&1';
   exec($cmd, $out, $code);
   @unlink($tmp);
-  error_log("wkhtmltopdf code={$code}");
   return $code === 0 && is_file($pdfPath) && filesize($pdfPath)>0;
 }
 function save_pdf_with_dompdf(string $html, string $pdfPath): bool {
   try_autoload_vendor();
-  if (!class_exists('\Dompdf\Dompdf')) { error_log('DOMPDF no está disponible'); return false; }
+  if (!class_exists('\Dompdf\Dompdf')) return false;
   $opts = new \Dompdf\Options();
   $opts->set('isRemoteEnabled', true);
   $opts->set('defaultFont', 'DejaVu Sans');
@@ -437,51 +395,48 @@ function save_pdf_with_dompdf(string $html, string $pdfPath): bool {
   $dompdf->setPaper('A4', 'portrait');
   $dompdf->render();
   $output = $dompdf->output();
-  $ok = (bool)file_put_contents($pdfPath, $output);
-  error_log("DOMPDF guardar={$ok}");
-  return $ok;
+  return (bool)file_put_contents($pdfPath, $output);
 }
 
-/* ===== Generación ===== */
+/* ===== Generación única ===== */
 $okPdf = save_pdf_with_dompdf($html, $pdfFs) ?: save_pdf_with_wkhtml($html, $pdfFs);
-error_log("okPdf=" . ($okPdf?'1':'0') . "  pdfFs={$pdfFs}");
+plog("PDF gen => ".($okPdf?'OK':'NO')."  target={$pdfFs}");
 
 /* Guardado silencioso (fetch desde la UI) */
 if ($silent) {
-  error_log("Guardado silencioso: okPdf={$okPdf}  desde={$desde}  hasta={$hasta}  titulo={$tituloHumano}");
+  plog("SILENT request recibido");
   if ($okPdf) {
-    // PDF OK → registro apuntando al PDF
-    save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
+    $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
+    plog("DB insert (PDF) id={$id} file={$fileRelPdf}");
   } else {
-    // Sin motor PDF → guardo HTML y registro igual
     file_put_contents($htmlFs, $html);
-    save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelHtml);
+    $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelHtml);
+    plog("DB insert (HTML) id={$id} file={$fileRelHtml}");
   }
   http_response_code(204);
   exit;
 }
 
-/* Guardado explícito (?save=1) */
+/* Guardado explícito (?save=1) – opcional */
 if ($wantSave) {
   if ($okPdf) {
-    save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
+    $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
+    plog("DB insert (SAVE/PDF) id={$id}");
     echo "<!doctype html><meta charset='utf-8'><link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>";
     echo "<div class='container py-4' style='max-width:720px'>";
     echo "<div class='alert alert-success'>PDF guardado en el servidor.</div>";
-    echo "<p><strong>Archivo:</strong> ".h(basename($pdfFs))."</p>";
-    echo "<p><a class='btn btn-primary' href='".h($pdfUrl)."' target='_blank'>Abrir PDF</a> ";
-    echo "<a class='btn btn-outline-secondary' href='?".h(http_build_query(['desde'=>$desde,'hasta'=>$hasta,'titulo'=>$tituloHumano]))."'>Volver al Parte</a></p>";
+    echo "<p><a class='btn btn-primary' href='".h($pdfUrl)."' target='_blank'>Abrir PDF</a></p>";
     echo "</div>";
   } else {
     file_put_contents($htmlFs, $html);
-    $htmlUrl = $webPartes . '/' . rawurlencode(basename($htmlFs));
-    save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelHtml);
+    $webPartes = rtrim(app_base_simple(), '/') . '/files/partes';
+    $htmlUrl   = $webPartes . '/' . rawurlencode(basename($htmlFs));
+    $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelHtml);
+    plog("DB insert (SAVE/HTML) id={$id}");
     echo "<!doctype html><meta charset='utf-8'><link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>";
     echo "<div class='container py-4' style='max-width:720px'>";
     echo "<div class='alert alert-warning'>No se encontró un motor de PDF. Se guardó el HTML como respaldo.</div>";
-    echo "<p><strong>Archivo:</strong> ".h(basename($htmlFs))."</p>";
-    echo "<p><a class='btn btn-outline-primary' href='".h($htmlUrl)."' target='_blank'>Ver HTML guardado</a> ";
-    echo "<a class='btn btn-outline-secondary' href='?".h(http_build_query(['desde'=>$desde,'hasta'=>$hasta,'titulo'=>$tituloHumano]))."'>Volver al Parte</a></p>";
+    echo "<p><a class='btn btn-outline-primary' href='".h($htmlUrl)."' target='_blank'>Ver HTML guardado</a></p>";
     echo "</div>";
   }
   exit;
@@ -490,7 +445,8 @@ if ($wantSave) {
 /* Visualización/descarga (?pdf=1) */
 if ($wantPdf) {
   if ($okPdf) {
-    save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
+    $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
+    plog("DB insert (PDF direct) id={$id}");
     header('Content-Type: application/pdf');
     header('Content-Disposition: inline; filename="'.basename($pdfFs).'"');
     header('Content-Length: ' . filesize($pdfFs));

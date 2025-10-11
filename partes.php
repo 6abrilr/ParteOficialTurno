@@ -1,48 +1,46 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/php/auth/bootstrap.php';
+
+require_once __DIR__ . '/php/auth/bootstrap.php'; // trae url(), db(), require_login(), etc.
 require_role('admin');
 
 $pdo = db();
-$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
-// helpers
-function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
-function url(string $p): string { return rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'),'/').'/'.ltrim($p,'/'); }
+if (!function_exists('h')) {
+  function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
+}
 
 // Base rutas (para assets)
 $BASE   = rtrim(str_replace('\\','/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/'); if ($BASE==='') $BASE='/';
 $ASSETS = rtrim($BASE, '/') . '/public';
 
-/* ================== Filtros ================== */
-// Dejar vacío por defecto -> “últimos 100”
-$fdia = trim((string)($_GET['fdia'] ?? ''));   // '' => sin filtro de fecha
+// Filtros
+$fdia = trim((string)($_GET['fdia'] ?? ''));   // vacío por defecto → últimos 100
 $uid  = (int)($_GET['uid'] ?? 0);
 
-// Select de usuarios activos (para “Creado por”)
+// Select de usuarios activos
 $users = $pdo->query("
   SELECT id, COALESCE(NULLIF(nombre,''), email) AS nom
   FROM users
   WHERE activo = 1
   ORDER BY nom
-")->fetchAll();
+")->fetchAll(PDO::FETCH_ASSOC);
 
-/* ================== Query ================== */
+// WHERE dinámico
 $where  = [];
 $params = [];
 
-// Si teclearon fecha, filtramos por ese día
 if ($fdia !== '') {
-  $where[]  = "DATE(p.fecha_desde) = ?";
+  // si elige un día, traemos el parte cuyo 'desde' o 'hasta' cae ese día
+  $where[]  = "(DATE(p.fecha_desde) = ? OR DATE(p.fecha_hasta) = ?)";
+  $params[] = $fdia;
   $params[] = $fdia;
 }
-// Si teclearon creador, filtramos por usuario
 if ($uid > 0) {
   $where[]  = "p.created_by = ?";
   $params[] = $uid;
 }
 
-// Límite: si NO hay filtros => 100; si hay alguno => 500
 $limit = ($fdia === '' && $uid === 0) ? 100 : 500;
 
 $sql = "
@@ -56,7 +54,7 @@ $sql = "
 ";
 $st = $pdo->prepare($sql);
 $st->execute($params);
-$rows = $st->fetchAll();
+$rows = $st->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!doctype html>
 <html lang="es">
@@ -68,23 +66,15 @@ $rows = $st->fetchAll();
   <link rel="icon" type="image/png" href="<?= h($ASSETS) ?>/img/escudo602sinfondo.png">
   <link rel="shortcut icon" href="<?= h($ASSETS) ?>/img/escudo602sinfondo.png">
   <style>
-    :root{
-      --ink:#0b1326; --deep:#0a1830; --mesh-opacity:.70; --glow-strength:.55;
-      --card-border:#e9ecef; --card-bg:#fff; --shadow:0 8px 24px rgba(33,37,41,.06);
-    }
+    :root{ --ink:#0b1326; --deep:#0a1830; --card-border:#e9ecef; --card-bg:#fff; --shadow:0 8px 24px rgba(33,37,41,.06); }
     html,body{height:100%} body{margin:0;background:#000;color:#212529}
     .page-bg{position:fixed;inset:0;z-index:-2;pointer-events:none;background:
-      radial-gradient(1200px 800px at 78% 24%, rgba(30,123,220,var(--glow-strength)) 0%, rgba(30,123,220,0) 60%),
+      radial-gradient(1200px 800px at 78% 24%, rgba(30,123,220,.55) 0%, rgba(30,123,220,0) 60%),
       radial-gradient(1000px 700px at 12% 82%, rgba(30,123,220,.35) 0%, rgba(30,123,220,0) 60%),
       linear-gradient(160deg, var(--ink) 0%, var(--deep) 55%, #071020 100%);
       background-attachment:fixed; filter:saturate(1.05)}
-    .mesh{position:fixed;right:-220px;top:-140px;width:1400px;height:900px;z-index:-1;opacity:.70;
-      background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1400' height='900' viewBox='0 0 1400 900'%3E%3Cg fill='none' stroke='%23a6c9ff' stroke-opacity='.40' stroke-width='1.1'%3E%3Cpath d='M860 60 L1120 180 L980 300 L1260 360 L1360 240'/%3E%3Cpath d='M1020 520 L1240 430 L1360 580'/%3E%3Cpath d='M900 240 L1120 360 L1280 260'/%3E%3Cpath d='M940 720 L1200 600 L1340 740'/%3E%3C/g%3E%3Cg fill='%23e9f4ff' fill-opacity='.95'%3E%3Ccircle cx='860' cy='60' r='3'/%3E%3Ccircle cx='1120' cy='180' r='2.5'/%3E%3Ccircle cx='980' cy='300' r='2.5'/%3E%3Ccircle cx='1260' cy='360' r='3'/%3E%3Ccircle cx='1360' cy='240' r='2.5'/%3E%3Ccircle cx='1020' cy='520' r='2.6'/%3E%3Ccircle cx='1240' cy='430' r='2.4'/%3E%3Ccircle cx='1360' cy='580' r='2.6'/%3E%3Ccircle cx='900' cy='240' r='2.5'/%3E%3Ccircle cx='1120' cy='360' r='2.4'/%3E%3Ccircle cx='1280' cy='260' r='2.8'/%3E%3Ccircle cx='940' cy='720' r='2.4'/%3E%3Ccircle cx='1200' cy='600' r='2.8'/%3E%3Ccircle cx='1340' cy='740' r='2.5'/%3E%3C/g%3E%3C/svg%3E") no-repeat center/contain;
-      mix-blend-mode:screen; filter:drop-shadow(0 0 35px rgba(124,196,255,.25)); pointer-events:none}
-    .brand-hero{position:relative;padding:28px 0 30px;color:#e9f2ff;isolation:isolate}
-    .hero-inner{display:flex;align-items:center;gap:14px}
-    .brand-logo{width:56px;height:56px;object-fit:contain;filter:drop-shadow(0 2px 10px rgba(124,196,255,.30))}
-    .brand-title{font-weight:800;letter-spacing:.4px;font-size:28px;line-height:1.1;text-shadow:0 2px 16px rgba(30,123,220,.45)}
+    .brand-hero{padding:28px 0 30px;color:#e9f2ff}
+    .brand-title{font-weight:800;letter-spacing:.4px;font-size:28px;line-height:1.1}
     .brand-sub{font-size:16px;opacity:.9;border-top:2px solid rgba(124,196,255,.35);display:inline-block;padding-top:4px;margin-top:2px}
     .brand-year{margin-left:auto;font-size:28px;font-weight:700;opacity:.85}
     .card{border-radius:14px;border:1px solid var(--card-border);box-shadow:var(--shadow);background:var(--card-bg)}
@@ -94,16 +84,15 @@ $rows = $st->fetchAll();
 </head>
 <body>
   <div class="page-bg"></div>
-  <span class="mesh"></span>
 
   <header class="brand-hero">
-    <div class="hero-inner container">
-      <img class="brand-logo" src="<?= h($ASSETS) ?>/img/escudo602sinfondo.png" alt="Escudo 602">
+    <div class="container d-flex align-items-center gap-2">
+      <img src="<?= h($ASSETS) ?>/img/escudo602sinfondo.png" width="56" height="56" alt="">
       <div>
         <div class="brand-title">Partes de Novedades</div>
         <div class="brand-sub">Batallón de Comunicaciones 602</div>
       </div>
-      <div class="brand-year"><?= date('Y') ?></div>
+      <div class="brand-year ms-auto"><?= date('Y') ?></div>
     </div>
   </header>
 
@@ -111,7 +100,8 @@ $rows = $st->fetchAll();
 
     <div class="d-flex justify-content-between align-items-center mb-3 text-light">
       <div class="d-flex gap-2">
-        <a class="btn btn-outline-light btn-sm" href="<?= h(url('admin.php')) ?>">← Volver al panel</a>
+        <a class="btn btn-outline-light btn-sm" href="<?= h(url('public/index.php')) ?>">← Volver</a>
+        <a class="btn btn-outline-light btn-sm" href="<?= h(url('partes.php')) ?>">Refrescar</a>
       </div>
       <div>
         <a class="btn btn-outline-light btn-sm" href="<?= h(url('logout.php')) ?>">Salir</a>
@@ -123,8 +113,8 @@ $rows = $st->fetchAll();
         <form class="row g-3 align-items-end" method="get">
           <div class="col-12 col-md-3">
             <label class="form-label">Día</label>
-            <input class="form-control" type="date" name="fdia" value="<?= h($fdia) ?>" placeholder="(vacío = últimos 100)">
-            <div class="form-text">Dejalo vacío para ver los últimos 100.</div>
+            <input class="form-control" type="date" name="fdia" value="<?= h($fdia) ?>">
+            <div class="form-text">Vacío: últimos 100. Si elegís un día: trae el parte de ese día.</div>
           </div>
           <div class="col-12 col-md-5">
             <label class="form-label">Creado por</label>
@@ -141,10 +131,6 @@ $rows = $st->fetchAll();
             <label class="form-label invisible">.</label>
             <button class="btn btn-primary w-100">Buscar</button>
           </div>
-          <div class="col-12 col-md-2">
-            <label class="form-label invisible">.</label>
-            <a class="btn btn-outline-secondary w-100" href="?">Limpiar filtros</a>
-          </div>
         </form>
       </div>
     </div>
@@ -152,9 +138,7 @@ $rows = $st->fetchAll();
     <div class="card">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <h5 class="mb-0">
-            Resultados <?= $fdia==='' && $uid===0 ? '(últimos 100)' : '' ?>
-          </h5>
+          <h5 class="mb-0">Resultados</h5>
           <span class="text-muted"><?= count($rows) ?> registros</span>
         </div>
 
@@ -177,9 +161,9 @@ $rows = $st->fetchAll();
               <?php else: ?>
                 <?php foreach($rows as $r):
                   $fileRel = (string)($r['file_rel_path'] ?? '');
-                  $fsPath  = __DIR__ . '/' . ltrim(str_replace('/', DIRECTORY_SEPARATOR, $fileRel), DIRECTORY_SEPARATOR);
+                  $fsPath  = __DIR__ . DIRECTORY_SEPARATOR . ltrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $fileRel), DIRECTORY_SEPARATOR);
                   $exists  = $fileRel !== '' && is_file($fsPath);
-                  $url     = rtrim($BASE,'/') . '/' . ltrim($fileRel,'/');
+                  $urlFile = rtrim($BASE,'/') . '/' . ltrim(str_replace('\\','/',$fileRel),'/');
                   $ext     = strtolower(pathinfo($fileRel, PATHINFO_EXTENSION));
                 ?>
                 <tr>
@@ -192,7 +176,7 @@ $rows = $st->fetchAll();
                   <td><?= h($r['titulo']) ?></td>
                   <td>
                     <?php if ($exists): ?>
-                      <a class="btn btn-sm btn-outline-primary" target="_blank" href="<?= h($url) ?>">
+                      <a class="btn btn-sm btn-outline-primary" target="_blank" href="<?= h($urlFile) ?>">
                         Abrir <?= $ext==='html' ? 'HTML' : 'PDF' ?>
                       </a>
                     <?php else: ?>

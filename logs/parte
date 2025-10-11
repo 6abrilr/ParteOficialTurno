@@ -1,0 +1,14 @@
+[11-Oct-2025 19:12:30 America/Argentina/Buenos_Aires] parte.php init  desde=2025-10-11T08:00  hasta=2025-10-12T08:00  wantPdf=  wantSave=  silent=
+[11-Oct-2025 19:12:30 America/Argentina/Buenos_Aires] parte.php init  desde=2025-10-11T08:00  hasta=  wantPdf=  wantSave=  silent=
+[11-Oct-2025 19:12:30 America/Argentina/Buenos_Aires] ERROR: faltan parámetros
+[11-Oct-2025 19:12:35 America/Argentina/Buenos_Aires] parte.php init  desde=2025-10-11 08:00:00  hasta=2025-10-12 08:00:00  wantPdf=  wantSave=  silent=
+[11-Oct-2025 19:12:35 America/Argentina/Buenos_Aires] parte.php init  desde=2025-10-11 08:00:00  hasta=  wantPdf=  wantSave=  silent=
+[11-Oct-2025 19:12:35 America/Argentina/Buenos_Aires] ERROR: faltan parámetros
+[11-Oct-2025 19:13:40 America/Argentina/Buenos_Aires] parte.php init  desde=2025-10-11 08:00:00  hasta=2025-10-12 08:00:00  wantPdf=  wantSave=  silent=
+[11-Oct-2025 19:13:40 America/Argentina/Buenos_Aires] parte.php init  desde=2025-10-11 08:00:00  hasta=  wantPdf=  wantSave=  silent=
+[11-Oct-2025 19:13:40 America/Argentina/Buenos_Aires] ERROR: faltan parámetros
+[11-Oct-2025 19:19:19 America/Argentina/Buenos_Aires] parte.php init  desde=2025-10-11T08:00  hasta=2025-10-12T08:00  wantPdf=  wantSave=  silent=
+[11-Oct-2025 19:19:19 America/Argentina/Buenos_Aires] parte.php init  desde=2025-10-11T08:00  hasta=2025-10-12T08:00  wantPdf=  wantSave=1  silent=1
+[11-Oct-2025 19:19:31 America/Argentina/Buenos_Aires] PDF gen => NO  target=C:\xampp\htdocs\ParteOficialTurno\files\partes\Parte de novedades del Arma de Comunicaciones del dia 11 al 12 de octubre de 2025.pdf
+[11-Oct-2025 19:19:31 America/Argentina/Buenos_Aires] SILENT request recibido
+[11-Oct-2025 19:19:31 America/Argentina/Buenos_Aires] DB insert (HTML) id=1 file=files/partes/Parte de novedades del Arma de Comunicaciones del dia 11 al 12 de octubre de 2025.html
