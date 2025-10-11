@@ -4,14 +4,19 @@ require_once __DIR__ . '/php/auth/bootstrap.php';
 require_role('admin');
 
 $pdo = db();
-function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
+$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
-// Base rutas
+// helpers
+function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); }
+function url(string $p): string { return rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'),'/').'/'.ltrim($p,'/'); }
+
+// Base rutas (para assets)
 $BASE   = rtrim(str_replace('\\','/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/'); if ($BASE==='') $BASE='/';
 $ASSETS = rtrim($BASE, '/') . '/public';
 
-// Filtros: día único + usuario creador
-$fdia = trim((string)($_GET['fdia'] ?? date('Y-m-d')));
+/* ================== Filtros ================== */
+// Dejar vacío por defecto -> “últimos 100”
+$fdia = trim((string)($_GET['fdia'] ?? ''));   // '' => sin filtro de fecha
 $uid  = (int)($_GET['uid'] ?? 0);
 
 // Select de usuarios activos (para “Creado por”)
@@ -20,20 +25,25 @@ $users = $pdo->query("
   FROM users
   WHERE activo = 1
   ORDER BY nom
-")->fetchAll(PDO::FETCH_ASSOC);
+")->fetchAll();
 
-// Query
+/* ================== Query ================== */
 $where  = [];
 $params = [];
 
+// Si teclearon fecha, filtramos por ese día
 if ($fdia !== '') {
   $where[]  = "DATE(p.fecha_desde) = ?";
   $params[] = $fdia;
 }
+// Si teclearon creador, filtramos por usuario
 if ($uid > 0) {
   $where[]  = "p.created_by = ?";
   $params[] = $uid;
 }
+
+// Límite: si NO hay filtros => 100; si hay alguno => 500
+$limit = ($fdia === '' && $uid === 0) ? 100 : 500;
 
 $sql = "
   SELECT p.*,
@@ -42,11 +52,11 @@ $sql = "
   LEFT JOIN users u ON u.id = p.created_by
   " . ($where ? 'WHERE ' . implode(' AND ', $where) : '') . "
   ORDER BY p.id DESC
-  LIMIT 500
+  LIMIT {$limit}
 ";
 $st = $pdo->prepare($sql);
 $st->execute($params);
-$rows = $st->fetchAll(PDO::FETCH_ASSOC);
+$rows = $st->fetchAll();
 ?>
 <!doctype html>
 <html lang="es">
@@ -113,8 +123,8 @@ $rows = $st->fetchAll(PDO::FETCH_ASSOC);
         <form class="row g-3 align-items-end" method="get">
           <div class="col-12 col-md-3">
             <label class="form-label">Día</label>
-            <input class="form-control" type="date" name="fdia" value="<?= h($fdia) ?>">
-            <div class="form-text">Ej.: 11/10/2025 → trae el parte 11–12.</div>
+            <input class="form-control" type="date" name="fdia" value="<?= h($fdia) ?>" placeholder="(vacío = últimos 100)">
+            <div class="form-text">Dejalo vacío para ver los últimos 100.</div>
           </div>
           <div class="col-12 col-md-5">
             <label class="form-label">Creado por</label>
@@ -128,9 +138,12 @@ $rows = $st->fetchAll(PDO::FETCH_ASSOC);
             </select>
           </div>
           <div class="col-12 col-md-2">
-            <!-- label invisible para alinear -->
             <label class="form-label invisible">.</label>
             <button class="btn btn-primary w-100">Buscar</button>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label invisible">.</label>
+            <a class="btn btn-outline-secondary w-100" href="?">Limpiar filtros</a>
           </div>
         </form>
       </div>
@@ -139,7 +152,9 @@ $rows = $st->fetchAll(PDO::FETCH_ASSOC);
     <div class="card">
       <div class="card-body">
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <h5 class="mb-0">Resultados</h5>
+          <h5 class="mb-0">
+            Resultados <?= $fdia==='' && $uid===0 ? '(últimos 100)' : '' ?>
+          </h5>
           <span class="text-muted"><?= count($rows) ?> registros</span>
         </div>
 
