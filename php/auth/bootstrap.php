@@ -50,8 +50,8 @@ function url(string $path = ''): string {
 
 /** Escapar HTML (solo si no existe ya) */
 if (!function_exists('h')) {
-  function h(string $s): string {
-    return htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+  function h($s): string {
+      return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
   }
 }
 

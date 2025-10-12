@@ -2,11 +2,17 @@
 // public/parte.php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../php/db.php';
 date_default_timezone_set('America/Argentina/Buenos_Aires');
 
-/* ====== LOG sencillo ====== */
-$LOGDIR = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'logs';
+// === usa SIEMPRE el bootstrap de auth (misma sesión que el login) ===
+require_once __DIR__ . '/../php/auth/bootstrap.php';
+require_login(); // opcional, pero recomendado para bloquear acceso anónimo
+
+$pdo = db();
+$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+
+/* ====== LOG simple a /logs/parte ====== */
+$LOGDIR  = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'logs';
 if (!is_dir($LOGDIR)) { @mkdir($LOGDIR, 0775, true); }
 $LOGFILE = $LOGDIR . DIRECTORY_SEPARATOR . 'parte';
 function plog(string $m): void {
@@ -14,15 +20,14 @@ function plog(string $m): void {
   @file_put_contents($LOGFILE, '['.date('d-M-Y H:i:s e').'] '.$m.PHP_EOL, FILE_APPEND);
 }
 
-/* ===== Helpers ===== */
-function h($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+/* ===== Helpers locales (no redefinimos h(), ya viene del bootstrap) ===== */
 function app_base_simple(): string {
   $dir  = rtrim(str_replace('\\','/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
   $base = preg_replace('#/public$#', '', $dir) ?: '/';
   return $base;
 }
 function mes_es(int $m): string {
-  $n = [1=>'enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  static $n = [1=>'enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   return $n[$m] ?? '';
 }
 function rango_es(string $desde, string $hasta): string {
@@ -41,8 +46,8 @@ function filename_safe(string $s): string {
   return trim($s, ". ");
 }
 function current_user_id(): ?int {
-  if (session_status() !== PHP_SESSION_ACTIVE) { @session_name('POTSESSID'); @session_start(); }
-  return isset($_SESSION['user']['id']) ? (int)$_SESSION['user']['id'] : null;
+  $u = user();                       // viene del bootstrap (misma sesión que el login)
+  return isset($u['id']) ? (int)$u['id'] : null;
 }
 function save_parte_record(PDO $pdo, array $enc, string $desde, string $hasta, string $titulo, string $fileRel): int {
   $stmt = $pdo->prepare("INSERT INTO partes
@@ -60,14 +65,14 @@ function save_parte_record(PDO $pdo, array $enc, string $desde, string $hasta, s
 }
 
 /* ===== Parámetros ===== */
-$desde = $_GET['desde'] ?? '';
-$hasta = $_GET['hasta'] ?? '';
+$desde    = $_GET['desde']  ?? '';
+$hasta    = $_GET['hasta']  ?? '';
 $wantPdf  = !empty($_GET['pdf']);
 $wantSave = !empty($_GET['save']);
-$silent   = !empty($_GET['silent']);     // fetch silencioso
-$showUi   = !$wantPdf && !$wantSave;     // vista HTML
+$silent   = !empty($_GET['silent']);        // fetch silencioso
+$showUi   = !$wantPdf && !$wantSave;        // vista HTML
 
-plog("parte.php init  desde={$desde}  hasta={$hasta}  wantPdf=".($wantPdf?'1':'')."  wantSave=".($wantSave?'1':'')."  silent=".($silent?'1':''));
+plog("parte.php init  desde={$desde}  hasta={$hasta}  wantPdf=".($wantPdf?'1':'')."  wantSave=".($wantSave?'1':'')."  silent=".($silent?'1':'')." userId=".var_export(current_user_id(),true));
 
 if (!$desde || !$hasta) {
   http_response_code(400);
@@ -76,11 +81,7 @@ if (!$desde || !$hasta) {
   exit;
 }
 
-/* ===== DB ===== */
-$pdo = db();
-$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-
-/* Encabezado del parte */
+/* ===== Encabezado del parte ===== */
 $enc = $pdo->prepare("SELECT * FROM parte_encabezado WHERE fecha_desde = ? AND fecha_hasta = ? ORDER BY id DESC LIMIT 1");
 $enc->execute([$desde, $hasta]);
 $enc = $enc->fetch() ?: [
@@ -90,7 +91,7 @@ $enc = $enc->fetch() ?: [
   'fecha_hasta'      => $hasta,
 ];
 
-/* Datos del informe */
+/* ===== Datos (como ya tenías) ===== */
 function col(array $r, string $a, ?string $b=null) { return $r[$a] ?? ($b && isset($r[$b]) ? $r[$b] : null); }
 $ordenGrado = "FIELD(grado,'TG','GD','GB','CY','CR','TC','MY','CT','TP','TT','ST','SM','SP','SA','SI','SG','CI','CB','VP','VS','SV','SOLD')";
 $pi = $pdo->query("SELECT * FROM personal_internado ORDER BY categoria, $ordenGrado, apellido_nombre, apellidoNombre")->fetchAll();
@@ -122,11 +123,9 @@ function render_estado_tabla(array $rows, array $cols){
   render_table($headers, $rowRenderer, $rows);
 }
 
-/* ===== Buffer HTML ===== */
+/* ===== Título y HTML ===== */
 $tituloHumano = trim((string)($_GET['titulo'] ?? ''));
-if ($tituloHumano==='') {
-  $tituloHumano = "Parte de novedades del Arma de Comunicaciones del dia " . rango_es($desde, $hasta);
-}
+if ($tituloHumano==='') $tituloHumano = "Parte de novedades del Arma de Comunicaciones del dia " . rango_es($desde, $hasta);
 
 ob_start();
 ?>
@@ -325,18 +324,16 @@ render_table($headersPend, $renderRowPend, $pendientes);
 </body>
 </html>
 <?php
-/* ===== fin HTML ===== */
 $html = ob_get_clean();
 
-/* Si no pidieron PDF/guardar, devolvemos HTML y (en 2º request) disparamos el guardado silencioso */
+/* ===== Si solo quieren ver en HTML, devolvemos y disparamos guardado silencioso ===== */
 if ($showUi) {
   echo $html;
-
   $qs = http_build_query([
     'desde'=>$desde,'hasta'=>$hasta,'titulo'=>$tituloHumano,
     'save'=>1,'silent'=>1
   ]);
-  echo "\n<script>fetch('parte.php?".$qs."',{credentials:'same-origin'}).catch(()=>{});</script>\n";
+  echo "\n<script>fetch('parte.php?".$qs."', {credentials:'same-origin'}).catch(()=>{});</script>\n";
   exit;
 }
 
@@ -378,8 +375,7 @@ function save_pdf_with_wkhtml(string $html, string $pdfPath): bool {
   $wk = find_wkhtmltopdf(); if (!$wk) return false;
   $tmp = tempnam(sys_get_temp_dir(), 'parte_') . '.html';
   file_put_contents($tmp, $html);
-  $cmd = escapeshellarg($wk) . ' --enable-local-file-access --encoding utf-8 '
-       . escapeshellarg($tmp) . ' ' . escapeshellarg($pdfPath) . ' 2>&1';
+  $cmd = escapeshellarg($wk) . ' --enable-local-file-access --encoding utf-8 ' . escapeshellarg($tmp) . ' ' . escapeshellarg($pdfPath) . ' 2>&1';
   exec($cmd, $out, $code);
   @unlink($tmp);
   return $code === 0 && is_file($pdfPath) && filesize($pdfPath)>0;
@@ -398,13 +394,16 @@ function save_pdf_with_dompdf(string $html, string $pdfPath): bool {
   return (bool)file_put_contents($pdfPath, $output);
 }
 
-/* ===== Generación única ===== */
+/* ===== Generación de PDF ===== */
 $okPdf = save_pdf_with_dompdf($html, $pdfFs) ?: save_pdf_with_wkhtml($html, $pdfFs);
 plog("PDF gen => ".($okPdf?'OK':'NO')."  target={$pdfFs}");
 
-/* Guardado silencioso (fetch desde la UI) */
+/* ===== Guardado silencioso (llamado por fetch) ===== */
 if ($silent) {
-  plog("SILENT request recibido");
+  // LOG explícito para depurar usuario y parámetros:
+  error_log("Guardado silencioso: okPdf=".($okPdf?1:0)."  desde=$desde  hasta=$hasta  titulo=$tituloHumano  userId=".var_export(current_user_id(),true));
+  plog("SILENT request recibido userId=".var_export(current_user_id(),true));
+
   if ($okPdf) {
     $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
     plog("DB insert (PDF) id={$id} file={$fileRelPdf}");
@@ -417,7 +416,7 @@ if ($silent) {
   exit;
 }
 
-/* Guardado explícito (?save=1) – opcional */
+/* ===== Guardado explícito (?save=1) ===== */
 if ($wantSave) {
   if ($okPdf) {
     $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
@@ -442,7 +441,7 @@ if ($wantSave) {
   exit;
 }
 
-/* Visualización/descarga (?pdf=1) */
+/* ===== Visualización/descarga (?pdf=1) ===== */
 if ($wantPdf) {
   if ($okPdf) {
     $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
