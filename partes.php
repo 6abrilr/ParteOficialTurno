@@ -198,7 +198,8 @@ $rows = $st->fetchAll(PDO::FETCH_ASSOC);
 
         <div class="col-12 col-md-2 ms-md-auto d-grid">
             <label class="form-label d-none d-md-block invisible">.</label>
-            <button class="btn btn-primary">Buscar</button>
+            <button type="submit" class="btn btn-primary">Buscar</button>
+
         </div>
 
         <!-- Ayuda en una fila completa para no desalinear -->
