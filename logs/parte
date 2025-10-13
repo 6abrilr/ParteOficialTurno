@@ -18,3 +18,8 @@
 [11-Oct-2025 20:38:57 America/Argentina/Buenos_Aires] PDF gen => OK  target=C:\xampp\htdocs\ParteOficialTurno\files\partes\Parte de novedades del Arma de Comunicaciones del dia 10 al 11 de octubre de 2025.pdf
 [11-Oct-2025 20:38:57 America/Argentina/Buenos_Aires] SILENT request recibido userId=1
 [11-Oct-2025 20:38:57 America/Argentina/Buenos_Aires] DB insert (PDF) id=2 file=files/partes/Parte de novedades del Arma de Comunicaciones del dia 10 al 11 de octubre de 2025.pdf
+[13-Oct-2025 12:56:58 America/Argentina/Buenos_Aires] parte.php init  desde=2025-10-13T08:00  hasta=2025-10-14T08:00  wantPdf=  wantSave=  silent= userId=2
+[13-Oct-2025 12:56:58 America/Argentina/Buenos_Aires] parte.php init  desde=2025-10-13T08:00  hasta=2025-10-14T08:00  wantPdf=  wantSave=1  silent=1 userId=2
+[13-Oct-2025 12:57:11 America/Argentina/Buenos_Aires] PDF gen => OK  target=C:\xampp\htdocs\ParteOficialTurno\files\partes\Parte de novedades del Arma de Comunicaciones del dia 13 al 14 de octubre de 2025.pdf
+[13-Oct-2025 12:57:11 America/Argentina/Buenos_Aires] SILENT request recibido userId=2
+[13-Oct-2025 12:57:11 America/Argentina/Buenos_Aires] DB insert (PDF) id=11 file=files/partes/Parte de novedades del Arma de Comunicaciones del dia 13 al 14 de octubre de 2025.pdf
