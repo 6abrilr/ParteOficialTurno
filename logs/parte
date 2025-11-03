@@ -27,3 +27,15 @@
 [13-Oct-2025 16:35:19 America/Argentina/Buenos_Aires] parte.php init  desde=2025-10-13T08:00  hasta=2025-10-14T08:00  wantPdf=  wantSave=1  silent=1 userId=1
 [13-Oct-2025 16:35:32 America/Argentina/Buenos_Aires] PDF gen => OK  target=C:\xampp\htdocs\ParteOficialTurno\files\partes\Parte de novedades del Arma de Comunicaciones del dia 13 al 14 de octubre de 2025.pdf
 [13-Oct-2025 16:35:32 America/Argentina/Buenos_Aires] SILENT request recibido userId=1
+[03-Nov-2025 15:16:29 America/Argentina/Buenos_Aires] parte.php init  desde=2025-11-03T08:00  hasta=2025-11-04T08:00  userId=NULL
+[03-Nov-2025 15:23:40 America/Argentina/Buenos_Aires] parte.php init  desde=2025-11-03T08:00  hasta=2025-11-04T08:00  userId=NULL
+[03-Nov-2025 15:23:48 America/Argentina/Buenos_Aires] parte.php init  desde=2025-11-03T08:00  hasta=2025-11-04T08:00  userId=NULL
+[03-Nov-2025 15:23:51 America/Argentina/Buenos_Aires] parte.php init  desde=2025-11-03 08:00:00  hasta=2025-11-04 08:00:00  userId=NULL
+[03-Nov-2025 15:24:28 America/Argentina/Buenos_Aires] parte.php init  desde=2025-11-03T08:00  hasta=2025-11-04T08:00  userId=NULL
+[03-Nov-2025 15:31:05 America/Argentina/Buenos_Aires] parte.php init  desde=2025-11-03T08:00  hasta=2025-11-04T08:00  userId=NULL
+[03-Nov-2025 16:07:26 America/Argentina/Buenos_Aires] parte.php init  desde=2025-11-03T08:00  hasta=2025-11-04T08:00  userId=NULL
+[03-Nov-2025 16:07:28 America/Argentina/Buenos_Aires] PDF gen => OK  target=C:\xampp\htdocs\ParteOficialTurno\files\partes\Parte de novedades del Arma de Comunicaciones del dia 3 al 4 de noviembre de 2025.pdf
+[03-Nov-2025 16:07:28 America/Argentina/Buenos_Aires] parte.php init  desde=2025-11-03T08:00  hasta=2025-11-04T08:00  userId=NULL
+[03-Nov-2025 16:07:29 America/Argentina/Buenos_Aires] PDF gen => OK  target=C:\xampp\htdocs\ParteOficialTurno\files\partes\Parte de novedades del Arma de Comunicaciones del dia 3 al 4 de noviembre de 2025.pdf
+[03-Nov-2025 16:07:30 America/Argentina/Buenos_Aires] parte.php init  desde=2025-11-03T08:00  hasta=2025-11-04T08:00  userId=NULL
+[03-Nov-2025 16:07:42 America/Argentina/Buenos_Aires] PDF gen => OK  target=C:\xampp\htdocs\ParteOficialTurno\files\partes\Parte de novedades del Arma de Comunicaciones del dia 3 al 4 de noviembre de 2025.pdf

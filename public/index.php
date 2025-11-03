@@ -7,7 +7,7 @@ require_once __DIR__ . '/../php/auth/bootstrap.php';
 require_login();
 
 /**
- * Helper para escapar HTML seguro en las vistas.
+ * Escape seguro
  */
 if (!function_exists('h')) {
     function h(string $s): string {
@@ -15,16 +15,63 @@ if (!function_exists('h')) {
     }
 }
 
-// Traer usuario autenticado desde la sesión (lo setea auth_login_cps)
+/**
+ * Devuelve "GRADO NOMBRE COMPLETO" si hay rank,
+ * sino solo nombre.
+ */
+function buildDisplayName(array $u): string {
+    $rank = trim((string)($u['rank'] ?? ''));
+    $full = trim((string)($u['full_name'] ?? ''));
+    if ($rank !== '' && $full !== '') {
+        return $rank . ' ' . $full;
+    }
+    if ($full !== '') {
+        return $full;
+    }
+    return (string)($u['username'] ?? $u['email_lab'] ?? 'Usuario');
+}
+
+/**
+ * Devuelve "GRADO APELLIDO" para usar como valor inicial del
+ * campo "Oficial de turno".
+ *
+ * Ej: rank="ST SCD", full_name="NESTOR GABRIEL ROJAS"
+ * -> "ST SCD ROJAS"
+ */
+function buildTurnoDefault(array $u): string {
+    $rank = trim((string)($u['rank'] ?? ''));
+    $full = trim((string)($u['full_name'] ?? ''));
+
+    // sacar último "apellido" del nombre completo
+    $apellido = '';
+    if ($full !== '') {
+        $parts = preg_split('/\s+/', $full);
+        if (is_array($parts) && count($parts) > 0) {
+            $apellido = strtoupper(end($parts));
+        }
+    }
+
+    if ($rank !== '' && $apellido !== '') {
+        return $rank . ' ' . $apellido;
+    }
+    if ($rank !== '') {
+        return $rank;
+    }
+    if ($apellido !== '') {
+        return $apellido;
+    }
+    // fallback
+    return (string)($u['username'] ?? 'OFICIAL');
+}
+
+// Usuario logueado
 $u = user();
 
-// Armar nombre a mostrar
-$displayName =
-    ($u['full_name'] ?? null)
-    ?: ($u['username'] ?? null)
-    ?: ($u['email_lab'] ?? null)
-    ?: 'Usuario';
+// Texto para el saludo arriba a la derecha ("Hola, ST SCD NESTOR GABRIEL ROJAS")
+$displayName = buildDisplayName($u);
 
+// Valor inicial para los campos "Oficial de turno" y "Suboficial de turno"
+$turnoDefault = buildTurnoDefault($u);
 ?>
 <!doctype html>
 <html lang="es">
@@ -272,11 +319,21 @@ $displayName =
             </div>
             <div class="col-sm-6 col-lg-3">
               <label class="form-label">Oficial de turno</label>
-              <input type="text" class="form-control" id="g_oficial" placeholder="Ej: ST ROJAS">
+              <input
+                type="text"
+                class="form-control"
+                id="g_oficial"
+                value="<?= h($turnoDefault) ?>"
+              >
             </div>
             <div class="col-sm-6 col-lg-3">
               <label class="form-label">Suboficial de turno</label>
-              <input type="text" class="form-control" id="g_subof" placeholder="Ej: CB MARTÍNEZ">
+              <input
+                type="text"
+                class="form-control"
+                id="g_subof"
+                value="<?= h($turnoDefault) ?>"
+              >
             </div>
           </div>
 
@@ -380,7 +437,7 @@ $displayName =
     </div>
   </main>
 
-  <!-- Failsafe para habilitar Generar Parte -->
+  <!-- Habilitar "Generar Parte" sólo si está todo completo -->
   <script>
   (function () {
     const btnGen = document.getElementById('btnGenerarParte');

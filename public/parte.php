@@ -1,33 +1,52 @@
 <?php
 // public/parte.php
 declare(strict_types=1);
-
 date_default_timezone_set('America/Argentina/Buenos_Aires');
 
-// === usa SIEMPRE el bootstrap de auth (misma sesión que el login) ===
-require_once __DIR__ . '/../php/auth/bootstrap.php';
-require_login(); // opcional, pero recomendado para bloquear acceso anónimo
+// Mostrar errores en desarrollo
+ini_set('display_errors','1');
+ini_set('display_startup_errors','1');
+error_reporting(E_ALL);
 
+// === Sesión + autenticación ===
+require_once __DIR__ . '/../php/auth/bootstrap.php';
+require_login();
+
+// === DB ===
+require_once __DIR__ . '/../php/db.php';
+if (!function_exists('db')) {
+  throw new RuntimeException("No se encontró la función db(). Verificá php/db.php");
+}
 $pdo = db();
 $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+// === helper h() seguro (acepta null/int/bool) ===
+if (!function_exists('h')) {
+  function h($s): string {
+    if ($s === null) return '';
+    if (!is_string($s)) $s = (string)$s;
+    return htmlspecialchars($s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+  }
+}
 
 /* ====== LOG simple a /logs/parte ====== */
 $LOGDIR  = realpath(__DIR__ . '/..') . DIRECTORY_SEPARATOR . 'logs';
-if (!is_dir($LOGDIR)) { @mkdir($LOGDIR, 0775, true); }
+if (!is_dir($LOGDIR)) @mkdir($LOGDIR, 0775, true);
 $LOGFILE = $LOGDIR . DIRECTORY_SEPARATOR . 'parte';
 function plog(string $m): void {
   global $LOGFILE;
   @file_put_contents($LOGFILE, '['.date('d-M-Y H:i:s e').'] '.$m.PHP_EOL, FILE_APPEND);
 }
 
-/* ===== Helpers locales (no redefinimos h(), ya viene del bootstrap) ===== */
+/* ===== Helpers ===== */
 function app_base_simple(): string {
   $dir  = rtrim(str_replace('\\','/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
   $base = preg_replace('#/public$#', '', $dir) ?: '/';
   return $base;
 }
 function mes_es(int $m): string {
-  static $n = [1=>'enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  static $n=[1=>'enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   return $n[$m] ?? '';
 }
 function rango_es(string $desde, string $hasta): string {
@@ -46,7 +65,7 @@ function filename_safe(string $s): string {
   return trim($s, ". ");
 }
 function current_user_id(): ?int {
-  $u = user();                       // viene del bootstrap (misma sesión que el login)
+  $u = user();
   return isset($u['id']) ? (int)$u['id'] : null;
 }
 function save_parte_record(PDO $pdo, array $enc, string $desde, string $hasta, string $titulo, string $fileRel): int {
@@ -69,10 +88,10 @@ $desde    = $_GET['desde']  ?? '';
 $hasta    = $_GET['hasta']  ?? '';
 $wantPdf  = !empty($_GET['pdf']);
 $wantSave = !empty($_GET['save']);
-$silent   = !empty($_GET['silent']);        // fetch silencioso
-$showUi   = !$wantPdf && !$wantSave;        // vista HTML
+$silent   = !empty($_GET['silent']);
+$showUi   = !$wantPdf && !$wantSave;
 
-plog("parte.php init  desde={$desde}  hasta={$hasta}  wantPdf=".($wantPdf?'1':'')."  wantSave=".($wantSave?'1':'')."  silent=".($silent?'1':'')." userId=".var_export(current_user_id(),true));
+plog("parte.php init  desde={$desde}  hasta={$hasta}  userId=".var_export(current_user_id(),true));
 
 if (!$desde || !$hasta) {
   http_response_code(400);
@@ -81,7 +100,7 @@ if (!$desde || !$hasta) {
   exit;
 }
 
-/* ===== Encabezado del parte ===== */
+/* ===== Encabezado (oficial/suboficial) ===== */
 $enc = $pdo->prepare("SELECT * FROM parte_encabezado WHERE fecha_desde = ? AND fecha_hasta = ? ORDER BY id DESC LIMIT 1");
 $enc->execute([$desde, $hasta]);
 $enc = $enc->fetch() ?: [
@@ -91,19 +110,23 @@ $enc = $enc->fetch() ?: [
   'fecha_hasta'      => $hasta,
 ];
 
-/* ===== Datos (como ya tenías) ===== */
+/* ===== Datos ===== */
 function col(array $r, string $a, ?string $b=null) { return $r[$a] ?? ($b && isset($r[$b]) ? $r[$b] : null); }
 $ordenGrado = "FIELD(grado,'TG','GD','GB','CY','CR','TC','MY','CT','TP','TT','ST','SM','SP','SA','SI','SG','CI','CB','VP','VS','SV','SOLD')";
 $pi = $pdo->query("SELECT * FROM personal_internado ORDER BY categoria, $ordenGrado, apellido_nombre, apellidoNombre")->fetchAll();
 $pa = $pdo->query("SELECT * FROM personal_alta      ORDER BY categoria, $ordenGrado, apellido_nombre, apellidoNombre")->fetchAll();
 $pf = $pdo->query("SELECT * FROM personal_fallecido ORDER BY id DESC")->fetchAll();
-function groupByKey(array $rows, string $key): array { $g=[]; foreach($rows as $r){ $g[$r[$key]][]=$r; } return $g; }
-$piG = groupByKey($pi, 'categoria'); $paG = groupByKey($pa, 'categoria');
+
+function groupByKeyNorm(array $rows, string $key): array {
+  $g=[]; foreach($rows as $r){ $k=strtoupper(trim((string)($r[$key] ?? ''))); $g[$k][]=$r; } return $g;
+}
+$piG = groupByKeyNorm($pi, 'categoria');
+$paG = groupByKeyNorm($pa, 'categoria');
 
 $estados = $pdo->query("SELECT * FROM sistema_estado ORDER BY categoria_id, nombre")->fetchAll();
 $estGrp  = []; foreach ($estados as $r) { $estGrp[$r['categoria_id']][] = $r; }
 
-/* tiny renderers */
+/* ===== Render helpers ===== */
 function render_table(array $headers, callable $rowRenderer, array $rows, string $emptyLabel='SIN NOVEDAD'){
   echo "<div class='table-responsive'><table class='table table-sm table-bordered'><thead><tr>";
   foreach($headers as $h) echo "<th>".h($h)."</th>";
@@ -123,10 +146,11 @@ function render_estado_tabla(array $rows, array $cols){
   render_table($headers, $rowRenderer, $rows);
 }
 
-/* ===== Título y HTML ===== */
+/* ===== Título ===== */
 $tituloHumano = trim((string)($_GET['titulo'] ?? ''));
 if ($tituloHumano==='') $tituloHumano = "Parte de novedades del Arma de Comunicaciones del dia " . rango_es($desde, $hasta);
 
+/* ===== Render HTML ===== */
 ob_start();
 ?>
 <!doctype html>
@@ -150,29 +174,14 @@ ob_start();
   .enc-right{ font-style:italic; white-space:nowrap; text-align:right; font-size:var(--fz-motto); }
   h2{ text-align:center; text-transform:uppercase; margin:0; font-size:var(--fz-h2); font-weight:700; margin-top:2mm; }
   h3{ font-size:12.5pt; margin:6mm 0 2mm; font-weight:700; text-transform:uppercase; }
-  h4{ font-size:12pt;   margin:5mm 0 2mm; font-weight:700; text-transform:uppercase; }
+  h4{ font-size:12pt; margin:5mm 0 2mm; font-weight:700; text-transform:uppercase; }
   h5{ font-size:11.5pt; margin:3mm 0 2mm; font-weight:700; text-transform:uppercase; }
   .turno-fecha{ font-size:var(--fz-turno-fecha); margin:3mm 0 1mm; }
   .turno-personal{ font-size:var(--fz-turno-personal); margin:0 0 3mm; }
-  .table{ width:100%; border-collapse:collapse; table-layout:fixed; }
+  .table{ width:100%; border-collapse:collapse; }
   .table th,.table td{ border:.6pt solid var(--grid)!important; padding:2.5mm 2mm; vertical-align:top; word-wrap:break-word; }
   .table thead th{ background:var(--thead); font-weight:700; text-transform:uppercase; }
-  .table-responsive{ overflow:visible !important; }
-  .table tbody td:nth-child(1), .table tbody td:nth-child(2){ text-align:center; white-space:nowrap; width:12mm; }
-  .table tbody td:nth-child(7), .table tbody td:nth-child(8){ white-space:nowrap; width:22mm; }
-  .tbl-fallecidos{ table-layout:auto; }
-  .tbl-fallecidos td:nth-child(7), .tbl-fallecidos th:nth-child(7){ width:auto; white-space:normal; word-break:break-word; }
-  .tbl-fallecidos td:nth-child(1){ width:10mm; text-align:center; white-space:nowrap; }
-  .tbl-fallecidos td:nth-child(2){ width:14mm; text-align:center; white-space:nowrap; }
-  .tbl-fallecidos td:nth-child(4), .tbl-fallecidos td:nth-child(5), .tbl-fallecidos td:nth-child(6){ width:22mm; white-space:nowrap; }
-  .ref-table{ table-layout:fixed; width:100%; margin-top:2mm; }
-  .ref-table td{ text-align:center; font-weight:700; vertical-align:middle; }
-  .ref-table col{ width:33.333%; }
-  .ref-table td.ref-new{ background:#f8d7da !important; color:#000; }
-  .ref-table td.ref-upd{ background:#fff3cd !important; color:#000; }
-  .ref-table td.ref-res{ background:#d1e7dd !important; color:#000; }
-  .ref-box{ display:block; padding:3mm 2mm; text-transform:uppercase; line-height:1.1; }
-  @media print{ body{ font-size:10pt; } .table{ table-layout:auto; } .table thead th{ background:#efefef !important; } .no-print{ display:none !important; } }
+  @media print{ body{ font-size:10pt; } .no-print{ display:none !important; } }
 </style>
 </head>
 <body>
@@ -246,11 +255,11 @@ foreach (['OFICIALES','SUBOFICIALES','SOLDADOS VOLUNTARIOS'] as $cat){
 <h3 class="mt-3">PERSONAL FALLECIDO</h3>
 <?php
 if (!$pf){
-  echo "<div class='table-responsive'><table class='table table-sm table-bordered tbl-fallecidos'><thead><tr>"
+  echo "<div class='table-responsive'><table class='table table-sm table-bordered'><thead><tr>"
      ."<th>Nro</th><th>Grado</th><th>Apellido y Nombre</th><th>Arma</th><th>Unidad/Destino</th><th>Fecha</th><th>Detalle</th>"
      ."</tr></thead><tbody><tr><td colspan='7' class='text-center text-muted'>SIN NOVEDAD</td></tr></tbody></table></div>";
 } else {
-  echo "<div class='table-responsive'><table class='table table-sm table-bordered tbl-fallecidos'><thead><tr>"
+  echo "<div class='table-responsive'><table class='table table-sm table-bordered'><thead><tr>"
      ."<th>Nro</th><th>Grado</th><th>Apellido y Nombre</th><th>Arma</th><th>Unidad/Destino</th><th>Fecha</th><th>Detalle</th>"
      ."</tr></thead><tbody>";
   foreach ($pf as $r){
@@ -269,13 +278,12 @@ if (!$pf){
 ?>
 
 <h4 class="mt-4">REFERENCIA</h4>
-<table class="table table-sm table-bordered ref-table">
-  <colgroup><col><col><col></colgroup>
+<table class="table table-sm table-bordered">
   <tbody>
     <tr>
-      <td class="ref-new"><span class="ref-box">NOVEDAD NUEVA</span></td>
-      <td class="ref-upd"><span class="ref-box">NOVEDAD ACTUALIZADA</span></td>
-      <td class="ref-res"><span class="ref-box">NOVEDAD RESUELTA</span></td>
+      <td style="text-align:center;font-weight:700;background:#f8d7da">NOVEDAD NUEVA</td>
+      <td style="text-align:center;font-weight:700;background:#fff3cd">NOVEDAD ACTUALIZADA</td>
+      <td style="text-align:center;font-weight:700;background:#d1e7dd">NOVEDAD RESUELTA</td>
     </tr>
   </tbody>
 </table>
@@ -326,39 +334,11 @@ render_table($headersPend, $renderRowPend, $pendientes);
 <?php
 $html = ob_get_clean();
 
-/* ===== Si solo quieren ver en HTML, devolvemos y disparamos guardado silencioso ===== */
-if ($showUi) {
-  echo $html;
-  $qs = http_build_query([
-    'desde'=>$desde,'hasta'=>$hasta,'titulo'=>$tituloHumano,
-    'save'=>1,'silent'=>1
-  ]);
-  echo "\n<script>fetch('parte.php?".$qs."', {credentials:'same-origin'}).catch(()=>{});</script>\n";
-  exit;
+/* ===== Utilidades PDF (inline) ===== */
+function try_autoload_vendor(): void {
+  $autoload = __DIR__ . '/../vendor/autoload.php';
+  if (is_file($autoload)) require_once $autoload;
 }
-
-/* ===== Rutas de salida ===== */
-$base        = app_base_simple();
-$rootFs      = realpath(__DIR__ . '/..');
-$dirPartesFs = $rootFs . DIRECTORY_SEPARATOR . 'files' . DIRECTORY_SEPARATOR . 'partes';
-if (!is_dir($dirPartesFs)) {
-  $mk = @mkdir($dirPartesFs, 0775, true);
-  plog("mkdir {$dirPartesFs} => ".($mk?'ok':'fail'));
-  @file_put_contents($dirPartesFs.DIRECTORY_SEPARATOR.'._test_write', 'ok');
-}
-
-$fnBaseHuman = filename_safe($tituloHumano);
-$pdfFs  = $dirPartesFs . DIRECTORY_SEPARATOR . $fnBaseHuman . '.pdf';
-$htmlFs = $dirPartesFs . DIRECTORY_SEPARATOR . $fnBaseHuman . '.html';
-
-$webPartes = rtrim($base, '/') . '/files/partes';
-$pdfUrl    = $webPartes . '/' . rawurlencode($fnBaseHuman . '.pdf');
-
-$fileRelPdf  = 'files/partes/' . $fnBaseHuman . '.pdf';
-$fileRelHtml = 'files/partes/' . basename($htmlFs);
-
-/* ===== Motores PDF ===== */
-function try_autoload_vendor(): void { $autoload = __DIR__ . '/../vendor/autoload.php'; if (is_file($autoload)) require_once $autoload; }
 function find_wkhtmltopdf(): ?string {
   $candidates = [
     'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe',
@@ -394,58 +374,64 @@ function save_pdf_with_dompdf(string $html, string $pdfPath): bool {
   return (bool)file_put_contents($pdfPath, $output);
 }
 
-/* ===== Generación de PDF ===== */
+/* ===== Rutas de salida ===== */
+$base        = app_base_simple();
+$rootFs      = realpath(__DIR__ . '/..');
+$dirPartesFs = $rootFs . DIRECTORY_SEPARATOR . 'files' . DIRECTORY_SEPARATOR . 'partes';
+if (!is_dir($dirPartesFs)) {
+  $mk = @mkdir($dirPartesFs, 0775, true);
+  plog("mkdir {$dirPartesFs} => ".($mk?'ok':'fail'));
+  @file_put_contents($dirPartesFs.DIRECTORY_SEPARATOR.'._test_write', 'ok');
+}
+$fnBaseHuman = filename_safe($tituloHumano);
+$pdfFs  = $dirPartesFs . DIRECTORY_SEPARATOR . $fnBaseHuman . '.pdf';
+$htmlFs = $dirPartesFs . DIRECTORY_SEPARATOR . $fnBaseHuman . '.html';
+$webPartes = rtrim($base, '/') . '/files/partes';
+$pdfUrl    = $webPartes . '/' . rawurlencode($fnBaseHuman . '.pdf');
+$fileRelPdf  = 'files/partes/' . $fnBaseHuman . '.pdf';
+$fileRelHtml = 'files/partes/' . basename($htmlFs);
+
+/* ===== Generación PDF / HTML ===== */
 $okPdf = save_pdf_with_dompdf($html, $pdfFs) ?: save_pdf_with_wkhtml($html, $pdfFs);
 plog("PDF gen => ".($okPdf?'OK':'NO')."  target={$pdfFs}");
 
-/* ===== Guardado silencioso (llamado por fetch) ===== */
-if ($silent) {
-  // LOG explícito para depurar usuario y parámetros:
-  error_log("Guardado silencioso: okPdf=".($okPdf?1:0)."  desde=$desde  hasta=$hasta  titulo=$tituloHumano  userId=".var_export(current_user_id(),true));
-  plog("SILENT request recibido userId=".var_export(current_user_id(),true));
+/* ===== Modos ===== */
+if ($showUi) {
+  echo $html;
+  // Guardado silencioso “best effort”
+  $qs = http_build_query(['desde'=>$desde,'hasta'=>$hasta,'titulo'=>$tituloHumano,'save'=>1,'silent'=>1]);
+  echo "\n<script>fetch('parte.php?".$qs."', {credentials:'same-origin'}).catch(()=>{});</script>\n";
+  exit;
+}
 
-  if ($okPdf) {
-    $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
-    plog("DB insert (PDF) id={$id} file={$fileRelPdf}");
-  } else {
-    file_put_contents($htmlFs, $html);
-    $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelHtml);
-    plog("DB insert (HTML) id={$id} file={$fileRelHtml}");
-  }
+if ($silent) {
+  if ($okPdf) $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
+  else { file_put_contents($htmlFs, $html); $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelHtml); }
   http_response_code(204);
   exit;
 }
 
-/* ===== Guardado explícito (?save=1) ===== */
 if ($wantSave) {
+  echo "<!doctype html><meta charset='utf-8'><link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>";
+  echo "<div class='container py-4' style='max-width:720px'>";
   if ($okPdf) {
     $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
-    plog("DB insert (SAVE/PDF) id={$id}");
-    echo "<!doctype html><meta charset='utf-8'><link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>";
-    echo "<div class='container py-4' style='max-width:720px'>";
     echo "<div class='alert alert-success'>PDF guardado en el servidor.</div>";
     echo "<p><a class='btn btn-primary' href='".h($pdfUrl)."' target='_blank'>Abrir PDF</a></p>";
-    echo "</div>";
   } else {
     file_put_contents($htmlFs, $html);
-    $webPartes = rtrim(app_base_simple(), '/') . '/files/partes';
-    $htmlUrl   = $webPartes . '/' . rawurlencode(basename($htmlFs));
+    $htmlUrl = $webPartes . '/' . rawurlencode(basename($htmlFs));
     $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelHtml);
-    plog("DB insert (SAVE/HTML) id={$id}");
-    echo "<!doctype html><meta charset='utf-8'><link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css' rel='stylesheet'>";
-    echo "<div class='container py-4' style='max-width:720px'>";
-    echo "<div class='alert alert-warning'>No se encontró un motor de PDF. Se guardó el HTML como respaldo.</div>";
+    echo "<div class='alert alert-warning'>No se pudo generar PDF. Se guardó el HTML como respaldo.</div>";
     echo "<p><a class='btn btn-outline-primary' href='".h($htmlUrl)."' target='_blank'>Ver HTML guardado</a></p>";
-    echo "</div>";
   }
+  echo "</div>";
   exit;
 }
 
-/* ===== Visualización/descarga (?pdf=1) ===== */
 if ($wantPdf) {
   if ($okPdf) {
     $id = save_parte_record($pdo, $enc, $desde, $hasta, $tituloHumano, $fileRelPdf);
-    plog("DB insert (PDF direct) id={$id}");
     header('Content-Type: application/pdf');
     header('Content-Disposition: inline; filename="'.basename($pdfFs).'"');
     header('Content-Length: ' . filesize($pdfFs));
@@ -457,3 +443,6 @@ if ($wantPdf) {
   }
   exit;
 }
+
+/* Fallback */
+echo $html;
