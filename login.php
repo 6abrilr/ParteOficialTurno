@@ -1,39 +1,56 @@
 <?php
 declare(strict_types=1);
 
-// Bootstrap de auth (cookies/sesión, helpers, CSRF, etc.)
-require_once __DIR__ . '/php/auth/bootstrap.php';
+require_once __DIR__ . '/php/auth/bootstrap.php'; // session_start(), csrf_input(), csrf_verify()
+require_once __DIR__ . '/login_cps.php';
 
-// Helpers básicos
-if (!function_exists('h')) { function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES, 'UTF-8'); } }
+if (!function_exists('h')) {
+    function h(string $s): string {
+        return htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+    }
+}
 
-// Base del proyecto (p.ej. /ParteOficialTurno)
-$BASE = rtrim(str_replace('\\','/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
-if ($BASE === '') $BASE = '/';
+/*
+ * IMPORTANTE:
+ * Tu app vive en http://localhost/ParteOficialTurno/
+ * y el home real que existe en disco es:
+ *   C:\xampp\htdocs\ParteOficialTurno\public\index.php
+ *
+ * Eso en URL es:
+ *   /ParteOficialTurno/public/index.php
+ *
+ * Lo usamos como destino fijo post-login.
+ */
+$HOME_AFTER_LOGIN = '/ParteOficialTurno/public/index.php';
 
-// Base de assets públicos (p.ej. /ParteOficialTurno/public)
-$ASSETS = rtrim($BASE, '/') . '/public';
-
-// Destino por defecto para no-admin
-$DEFAULT_NEXT = $ASSETS . '/';
-
-// Lee “next” (GET o POST) y lo sanitiza (solo rutas internas)
-$next = $_GET['next'] ?? $_POST['next'] ?? $DEFAULT_NEXT;
-if (!is_string($next) || !preg_match('#^/[^:]*$#', $next)) $next = $DEFAULT_NEXT;
+// ---------------------------------------------------------------------------------
+// Sanitizar "next", pero ya NO lo vamos a usar para redirigir
+// (lo dejamos solo para que el form no rompa)
+$next = $_GET['next'] ?? $_POST['next'] ?? $HOME_AFTER_LOGIN;
+if (!is_string($next) || !preg_match('#^/[^:]*$#', $next)) {
+    $next = $HOME_AFTER_LOGIN;
+}
+// ---------------------------------------------------------------------------------
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  csrf_verify();
-  $email = trim((string)($_POST['email'] ?? ''));
-  $pass  = (string)($_POST['password'] ?? '');
+    csrf_verify();
 
-  if (auth_login($email, $pass)) {
-    // Si es admin, ignora "next" y manda a admin.php
-    $isAdmin = function_exists('user_has_role') ? user_has_role('admin') : false;
-    $dest = $isAdmin ? ($BASE . '/admin.php') : $next;
-    header('Location: ' . $dest);
-    exit;
-  }
-  $error = 'Email o contraseña incorrectos.';
+    $username = trim((string)($_POST['username'] ?? ''));
+    $pass     = (string)($_POST['password'] ?? '');
+
+    try {
+        $ok = auth_login_cps($username, $pass);
+
+        if ($ok) {
+            // SIN chequeo de admin, SIN admin.php, SIN next dinámico:
+            header('Location: ' . $HOME_AFTER_LOGIN);
+            exit;
+        }
+
+        $error = 'No se pudo iniciar sesión.';
+    } catch (Exception $e) {
+        $error = 'No se pudo iniciar sesión: ' . $e->getMessage();
+    }
 }
 ?>
 <!doctype html>
@@ -42,11 +59,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <meta charset="utf-8">
   <title>Iniciar sesión – B Com 602</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
   <!-- Bootstrap CDN -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
-  <link rel="icon" type="image/png" href="<?= h($ASSETS) ?>/img/escudo602sinfondo.png">
-  <link rel="shortcut icon" href="<?= h($ASSETS) ?>/img/escudo602sinfondo.png">
+  <link rel="icon" type="image/png" href="/ParteOficialTurno/public/img/escudo602sinfondo.png">
+  <link rel="shortcut icon" href="/ParteOficialTurno/public/img/escudo602sinfondo.png">
 
   <style>
     :root{
@@ -79,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       background-position: 0 0, 30% 40%, 80% 60%, 10% 90%, 70% 10%;
     }
     .mesh{
-      position:fixed; right:-220px; top:-140px; width:1400px; height:900px; z-index:-1; opacity:var(--mesh-opacity);
+      position:fixed; right:-220px; top:-140px; width:1400px; height:900px; z-index:-1; opacity:.70;
       background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1400' height='900' viewBox='0 0 1400 900'%3E%3Cg fill='none' stroke='%23a6c9ff' stroke-opacity='.40' stroke-width='1.1'%3E%3Cpath d='M860 60 L1120 180 L980 300 L1260 360 L1360 240'/%3E%3Cpath d='M1020 520 L1240 430 L1360 580'/%3E%3Cpath d='M900 240 L1120 360 L1280 260'/%3E%3Cpath d='M940 720 L1200 600 L1340 740'/%3E%3C/g%3E%3Cg fill='%23e9f4ff' fill-opacity='.95'%3E%3Ccircle cx='860' cy='60' r='3'/%3E%3Ccircle cx='1120' cy='180' r='2.5'/%3E%3Ccircle cx='980' cy='300' r='2.5'/%3E%3Ccircle cx='1260' cy='360' r='3'/%3E%3Ccircle cx='1360' cy='240' r='2.5'/%3E%3Ccircle cx='1020' cy='520' r='2.6'/%3E%3Ccircle cx='1240' cy='430' r='2.4'/%3E%3Ccircle cx='1360' cy='580' r='2.6'/%3E%3Ccircle cx='900' cy='240' r='2.5'/%3E%3Ccircle cx='1120' cy='360' r='2.4'/%3E%3Ccircle cx='1280' cy='260' r='2.8'/%3E%3Ccircle cx='940' cy='720' r='2.4'/%3E%3Ccircle cx='1200' cy='600' r='2.8'/%3E%3Ccircle cx='1340' cy='740' r='2.5'/%3E%3C/g%3E%3C/svg%3E") no-repeat center/contain;
       mix-blend-mode:screen; filter:drop-shadow(0 0 35px rgba(124,196,255,.25)); pointer-events:none;
     }
@@ -91,12 +109,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .brand-sub{ font-size:16px; opacity:.9; border-top:2px solid rgba(124,196,255,.35); display:inline-block; padding-top:4px; margin-top:2px; }
     .brand-year{ margin-left:auto; font-size:28px; font-weight:700; opacity:.85; }
     .login-wrap{ margin-top:-30px; display:flex; align-items:flex-start; justify-content:center; }
-    .card{ border-radius:14px; border:1px solid var(--card-border); box-shadow:var(--shadow); background:var(--card-bg); }
+    .card{ border-radius:14px; border:1px solid #e9ecef; box-shadow:0 8px 24px rgba(33,37,41,.06); background:#fff; }
     .card .card-body{ padding:20px; }
     .form-label{ font-size:.9rem; text-transform:uppercase; letter-spacing:.04em; color:#495057; }
-    .btn{ border-radius:10px; } .btn-primary{ background:var(--primary); border-color:var(--primary); }
-    .btn-primary:hover{ background:var(--primary-2); border-color:var(--primary-2); }
-    @media (min-width:1200px){ .container{ max-width:var(--container-max) !important; } }
+    .btn{ border-radius:10px; }
+    .btn-primary{ background:#0d6efd; border-color:#0d6efd; }
+    .btn-primary:hover{ background:#0b5ed7; border-color:#0b5ed7; }
+    @media (min-width:1200px){ .container{ max-width:1280px !important; } }
+    .toggle-pass-btn {
+      border-top-left-radius:0;
+      border-bottom-left-radius:0;
+    }
   </style>
 </head>
 <body>
@@ -107,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   <header class="brand-hero">
     <div class="hero-inner container">
-      <img class="brand-logo" src="<?= h($ASSETS) ?>/img/escudo602sinfondo.png" alt="Escudo 602">
+      <img class="brand-logo" src="/ParteOficialTurno/public/img/escudo602sinfondo.png" alt="Escudo 602">
       <div>
         <div class="brand-title">Batallón de Comunicaciones 602</div>
         <div class="brand-sub">“Hogar de las Comunicaciones fijas del Ejército”</div>
@@ -135,24 +158,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <input type="hidden" name="next" value="<?= h($next) ?>">
 
             <div class="mb-3">
-              <label class="form-label">Email</label>
-              <input name="email" type="email" class="form-control" autofocus required>
+              <label class="form-label">Usuario Ejército</label>
+              <input name="username" type="text" class="form-control" autofocus required>
             </div>
 
             <div class="mb-3">
               <label class="form-label">Contraseña</label>
-              <input name="password" type="password" class="form-control" required>
+              <div class="input-group">
+                <input id="passwordField" name="password" type="password" class="form-control" required>
+                <button class="btn btn-outline-secondary toggle-pass-btn" type="button" id="togglePassBtn" aria-label="Mostrar u ocultar contraseña">
+                  <span id="togglePassIcon">👁️</span>
+                </button>
+              </div>
             </div>
 
             <div class="d-flex align-items-center justify-content-between">
               <button class="btn btn-primary">Entrar</button>
-              <a href="<?= h($BASE . '/recuperar.php') ?>">¿Olvidaste tu contraseña?</a>
+              <span class="text-muted" style="font-size:.9rem">
+                Clave gestionada por CPS
+              </span>
             </div>
           </form>
+
         </div>
       </div>
     </div>
   </main>
+
+  <script>
+    (function(){
+      const passInput = document.getElementById('passwordField');
+      const btn = document.getElementById('togglePassBtn');
+      const icon = document.getElementById('togglePassIcon');
+
+      btn.addEventListener('click', function(){
+        const visible = passInput.type === 'text';
+        passInput.type = visible ? 'password' : 'text';
+        icon.textContent = visible ? '👁️' : '🙈';
+      });
+    })();
+  </script>
 
 </body>
 </html>
